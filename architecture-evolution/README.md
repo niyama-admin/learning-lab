@@ -11,7 +11,7 @@ The method is customer-neutral. Each engagement supplies its own workloads, cons
 - [Decision method](decision-method.md): the repeatable process, evidence model, scoring model, and governance cycle.
 - [Interactive architecture blueprint](blueprint/README.md): a clickable generic application architecture with scale, reliability, and latency filters.
 - [Blueprint application](blueprint/index.html): the standalone interactive view.
-- [GitHub Pages deployment target](https://niyama-admin.github.io/consulting/): becomes available after Pages is enabled and the workflow is deployed from the default branch.
+- [Live architecture blueprint](https://niyama-admin.github.io/consulting/architecture-blueprint/): the GitHub Pages deployment from the default branch.
 
 ## Method at a glance
 

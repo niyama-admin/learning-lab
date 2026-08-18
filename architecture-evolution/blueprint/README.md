@@ -4,7 +4,7 @@
 
 The blueprint makes a generic application architecture explorable. Select scale, reliability, and latency profiles, then choose a component to see which technology patterns remain eligible. A component is greyed out when every option fails at least one selected threshold; it remains clickable so the rejection reasons can be inspected.
 
-GitHub Pages target: [https://niyama-admin.github.io/consulting/](https://niyama-admin.github.io/consulting/). A repository administrator must enable **Settings → Pages → Source: GitHub Actions** before the first deployment.
+Live site: [https://niyama-admin.github.io/consulting/architecture-blueprint/](https://niyama-admin.github.io/consulting/architecture-blueprint/).
 
 ## Run locally
 
