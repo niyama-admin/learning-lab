@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Interactive, evidence-driven application architecture blueprint">
+  <title>Architecture Decision Blueprint</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <div>
+      <p class="eyebrow">Architecture evolution</p>
+      <h1>Application decision blueprint</h1>
+      <p class="subtitle">Filter measurable quality targets, then inspect the technology patterns that remain eligible for each component.</p>
+    </div>
+    <a class="method-link" href="../decision-method.md">Decision method</a>
+  </header>
+
+  <main>
+    <section class="filter-bar" aria-labelledby="profile-title">
+      <div class="filter-heading">
+        <h2 id="profile-title">Operating profile</h2>
+        <p id="filter-status" aria-live="polite"></p>
+      </div>
+      <label>
+        <span>Scale</span>
+        <select id="scale-filter">
+          <option value="1">Pilot · &lt;100 RPS</option>
+          <option value="2" selected>Regional · 100–5,000 RPS</option>
+          <option value="3">National/global · &gt;5,000 RPS</option>
+        </select>
+      </label>
+      <label>
+        <span>Reliability</span>
+        <select id="reliability-filter">
+          <option value="1">Standard · 99.5%</option>
+          <option value="2" selected>High · 99.9%</option>
+          <option value="3">Mission-critical · 99.99%</option>
+        </select>
+      </label>
+      <label>
+        <span>Latency</span>
+        <select id="latency-filter">
+          <option value="1">Relaxed · &gt;1 s</option>
+          <option value="2" selected>Interactive · 200 ms–1 s</option>
+          <option value="3">Low · &lt;200 ms</option>
+        </select>
+      </label>
+      <button id="reset-filters" type="button">Reset</button>
+    </section>
+
+    <div class="workspace">
+      <section class="blueprint" aria-labelledby="blueprint-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Clickable component map</p>
+            <h2 id="blueprint-title">Generic application architecture</h2>
+          </div>
+          <div class="legend" aria-label="Eligibility legend">
+            <span><i class="legend-mark eligible"></i>Eligible options</span>
+            <span><i class="legend-mark blocked"></i>No eligible options</span>
+          </div>
+        </div>
+        <div id="architecture-layers"></div>
+      </section>
+
+      <aside class="detail-panel" aria-labelledby="detail-title">
+        <div id="component-detail" aria-live="polite"></div>
+      </aside>
+    </div>
+
+    <p class="catalog-note">Seed capability bands are illustrative. Validate them using workload-specific tests, service commitments, cost evidence, team constraints, and architecture decision records.</p>
+  </main>
+
+  <script src="catalog.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
