@@ -56,6 +56,18 @@ Classify every criterion as either:
 - **Hard gate**: failure eliminates the option unless an accountable authority approves an explicit exception.
 - **Trade-off**: contributes to comparative value after all gates pass.
 
+### Compute decision stack
+
+Do not treat serverless, virtual machines, and self-hosting as a single flat choice. They answer different questions:
+
+| Decision axis | Representative options | Evidence to compare |
+|---|---|---|
+| Execution abstraction | Functions, managed application platform, managed containers, orchestrated containers, virtual machines, bare metal | Startup time, execution duration, protocol support, isolation, portability, runtime constraints |
+| Hosting responsibility | Provider-managed service, customer-managed public cloud, private cloud/on-premises, colocated infrastructure, edge/branch | Residency, control, shared responsibility, skills, support, capital cost, recovery ownership |
+| Scaling and scheduling | Platform autoscaling, VM scale groups, container scheduler, batch scheduler, manually provisioned capacity | Scaling time, minimum capacity, placement constraints, failure recovery, utilization, operational toil |
+
+Prefer the highest managed abstraction that passes every hard gate and meets the workload scenarios. Move toward virtual machines or self-hosted infrastructure only when supported by evidence such as legacy compatibility, hardware requirements, data sovereignty, predictable sustained economics, disconnected operation, licensing, or control requirements. “More control” is not sufficient unless the organization can operate that control reliably.
+
 ## 5. Maintain an evidence register
 
 Each material option claim should use a record such as:

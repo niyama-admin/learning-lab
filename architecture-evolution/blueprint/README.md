@@ -35,7 +35,8 @@ The seed catalog covers:
 - Application services, workflows, and integrations.
 - LLM orchestration, RAG, and memory.
 - Operational, cache, and analytical data.
-- Runtime, observability, and delivery platform capabilities.
+- Compute abstraction, hosting responsibility, and scaling control.
+- Observability and delivery platform capabilities.
 
 Each option declares the maximum profile band it is assumed to support. The UI applies the selected profiles as hard gates and explains every rejection.
 

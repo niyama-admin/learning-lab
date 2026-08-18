@@ -191,20 +191,52 @@ window.ARCHITECTURE_CATALOG = {
       ]
     },
     {
-      id: "platform",
-      name: "Platform",
-      description: "Runtime, delivery, and operations",
+      id: "compute",
+      name: "Compute",
+      description: "Execution, hosting, and scaling responsibility",
       components: [
         {
-          id: "runtime",
-          name: "Application runtime",
-          summary: "Compute placement, scaling, isolation, scheduling, and deployment unit.",
+          id: "compute-abstraction",
+          name: "Execution abstraction",
+          summary: "The unit that executes application code and the infrastructure detail exposed to the team.",
           options: [
-            { name: "Virtual machines", examples: "Hardened VM images with autoscaling", scale: 2, reliability: 2, latency: 3, note: "Fits legacy and specialized workloads; the team owns more operating-system lifecycle work." },
-            { name: "Managed application or container platform", examples: "App service, container apps, managed Kubernetes", scale: 3, reliability: 3, latency: 3, note: "A broad default when team maturity matches the selected abstraction level." },
-            { name: "Serverless runtime", examples: "Functions and managed event runtimes", scale: 3, reliability: 2, latency: 2, note: "Fits bursty and event-driven workloads; validate cold starts, duration limits, and dependency behavior." }
+            { name: "Serverless functions", examples: "Azure Functions, AWS Lambda, Google Cloud Functions", scale: 3, reliability: 2, latency: 2, note: "Fits event-driven and bursty work; validate cold starts, duration, concurrency, networking, and portability limits." },
+            { name: "Managed application platform", examples: "App Service, Cloud Run, Heroku-class PaaS", scale: 3, reliability: 3, latency: 3, note: "A strong default for request-serving applications when the supported runtime and networking model fit." },
+            { name: "Managed container runtime", examples: "Container Apps, ECS/Fargate, managed container services", scale: 3, reliability: 3, latency: 3, note: "Adds image portability and workload control without requiring the team to operate the full scheduler." },
+            { name: "Virtual machines", examples: "Hardened VM images, VM scale sets, autoscaling groups", scale: 3, reliability: 3, latency: 3, note: "Fits legacy, specialized, or highly controlled runtimes; the team owns more operating-system and capacity lifecycle work." },
+            { name: "Bare-metal process runtime", examples: "Physical hosts with system services or a process supervisor", scale: 2, reliability: 2, latency: 3, note: "Reserve for hardware, licensing, isolation, or deterministic-performance requirements supported by evidence." }
           ]
         },
+        {
+          id: "hosting-model",
+          name: "Hosting responsibility",
+          summary: "Where compute runs and which party owns infrastructure availability, patching, capacity, and recovery.",
+          options: [
+            { name: "Provider-managed cloud service", examples: "Managed serverless, PaaS, database, and container services", scale: 3, reliability: 3, latency: 3, note: "Prefer when residency, service limits, commercial terms, and the provider responsibility model satisfy the scenarios." },
+            { name: "Customer-managed public cloud", examples: "Customer-operated VMs or Kubernetes in a cloud account", scale: 3, reliability: 3, latency: 3, note: "Provides configuration control while retaining elastic infrastructure; requires mature platform and security operations." },
+            { name: "Private cloud or on-premises", examples: "VMware, OpenStack, OpenShift, self-hosted Kubernetes", scale: 3, reliability: 3, latency: 3, note: "Fits sovereignty, legacy integration, or control requirements only when capacity and recovery ownership are funded." },
+            { name: "Edge or branch hosting", examples: "Appliance, edge Kubernetes, ruggedized or disconnected node", scale: 2, reliability: 2, latency: 3, note: "Fits local processing, intermittent connectivity, or strict proximity needs; design synchronization and remote operations explicitly." }
+          ]
+        },
+        {
+          id: "compute-control-plane",
+          name: "Scaling and scheduling",
+          summary: "How capacity is allocated, workloads are placed, failures are recovered, and utilization is controlled.",
+          options: [
+            { name: "Platform-managed autoscaling", examples: "Function, PaaS, or managed container autoscaling", scale: 3, reliability: 3, latency: 2, note: "Minimizes capacity operations; verify scaling signals, warm capacity, quotas, and failure behavior." },
+            { name: "VM groups and image automation", examples: "VM scale sets, autoscaling groups, immutable images", scale: 3, reliability: 3, latency: 3, note: "Fits VM-bound workloads when image, patch, health, scaling, and replacement automation are mature." },
+            { name: "Managed container orchestration", examples: "Managed Kubernetes or provider container scheduler", scale: 3, reliability: 3, latency: 3, note: "Fits diverse container workloads when scheduling and platform capabilities justify its complexity." },
+            { name: "Self-hosted orchestration", examples: "Self-managed Kubernetes, OpenShift, Nomad, batch scheduler", scale: 3, reliability: 3, latency: 3, note: "Choose only when control requirements and platform capability justify ownership of the control plane and upgrades." },
+            { name: "Static or manually managed capacity", examples: "Fixed VM or physical-host pool", scale: 1, reliability: 1, latency: 3, note: "Acceptable for constrained pilots or stable isolated workloads with explicit spare capacity and recovery procedures." }
+          ]
+        }
+      ]
+    },
+    {
+      id: "platform",
+      name: "Platform",
+      description: "Delivery, observability, and operations",
+      components: [
         {
           id: "observability",
           name: "Observability",
