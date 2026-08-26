@@ -61,8 +61,8 @@ function outputText(json) {
 let resolvedModel;
 const defaultModelCandidates = [
   "qwen3.5-397b-a17b",
-  "llama-4-maverick",
   "deepseek-4-flash",
+  "llama-4-maverick",
   "kimi-k2.5"
 ];
 
@@ -76,26 +76,38 @@ async function createModelResponse(input) {
     const body = usesChatCompletions
       ? { model, messages: [{ role: "user", content: input }], max_tokens: 14_000, temperature: 0.15, stream: false }
       : { model, input, max_output_tokens: 14_000, temperature: 0.15, stream: false };
-    for (let requestAttempt = 1; requestAttempt <= 4; requestAttempt++) {
-      const response = await fetch(`https://inference.do-ai.run/v1/${endpoint}`, {
-        method: "POST",
-        headers: { "Authorization": `Bearer ${process.env.MODEL_ACCESS_KEY}`, "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(20 * 60 * 1000)
-      });
+    for (let requestAttempt = 1; requestAttempt <= 3; requestAttempt++) {
+      let response;
+      try {
+        response = await fetch(`https://inference.do-ai.run/v1/${endpoint}`, {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${process.env.MODEL_ACCESS_KEY}`, "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(90_000)
+        });
+      } catch (error) {
+        failures.push(`${model}: network/timeout ${error.cause?.code ?? error.name}: ${error.message}`);
+        if (configured) throw new Error(`DigitalOcean inference failed: ${failures.join(" | ")}`);
+        console.warn(`${model}: serverless request timed out; trying the next model`);
+        break;
+      }
       if (response.ok) {
         resolvedModel = model;
         console.log(`DigitalOcean model: ${model}`);
         return response.json();
       }
       const detail = (await response.text()).slice(0, 500);
-      if (response.status === 429 && requestAttempt < 4) {
+      if (response.status === 429 && requestAttempt < 3) {
         const delayMs = 15_000 * (2 ** (requestAttempt - 1));
         console.warn(`${model}: serverless capacity busy; retrying in ${delayMs / 1000}s (${requestAttempt}/4)`);
         await new Promise(resolve => setTimeout(resolve, delayMs));
         continue;
       }
       failures.push(`${model}: HTTP ${response.status} ${detail}`);
+      if (response.status === 429 && !configured) {
+        console.warn(`${model}: serverless capacity remained busy; trying the next model`);
+        break;
+      }
       const unavailable = (response.status === 403 && /not available|subscription tier/i.test(detail))
         || (response.status === 404 && /model not found|not a responses model/i.test(detail));
       if (configured || !unavailable) throw new Error(`DigitalOcean inference failed: ${failures.join(" | ")}`);
