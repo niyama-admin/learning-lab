@@ -1,0 +1,24 @@
+order,stage,slug,arxiv_id,title,authors,pdf_url,tutorial
+1,01-foundations,01-transformer,1706.03762,"Attention Is All You Need","Vaswani et al.",https://arxiv.org/pdf/1706.03762,tutorials/01-foundations/01-transformer.md
+2,01-foundations,02-bert,1810.04805,"BERT: Pre-training of Deep Bidirectional Transformers","Devlin et al.",https://arxiv.org/pdf/1810.04805,tutorials/01-foundations/02-bert.md
+3,01-foundations,03-gpt3,2005.14165,"Language Models are Few-Shot Learners","Brown et al.",https://arxiv.org/pdf/2005.14165,tutorials/01-foundations/03-gpt3.md
+4,01-foundations,04-scaling-laws,2001.08361,"Scaling Laws for Neural Language Models","Kaplan et al.",https://arxiv.org/pdf/2001.08361,tutorials/01-foundations/04-scaling-laws.md
+5,01-foundations,05-chinchilla,2203.15556,"Training Compute-Optimal Large Language Models","Hoffmann et al.",https://arxiv.org/pdf/2203.15556,tutorials/01-foundations/05-chinchilla.md
+6,02-building,06-rag,2005.11401,"Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks","Lewis et al.",https://arxiv.org/pdf/2005.11401,tutorials/02-building/06-rag.md
+7,02-building,07-chain-of-thought,2201.11903,"Chain-of-Thought Prompting Elicits Reasoning in Large Language Models","Wei et al.",https://arxiv.org/pdf/2201.11903,tutorials/02-building/07-chain-of-thought.md
+8,02-building,08-instructgpt,2203.02155,"Training Language Models to Follow Instructions with Human Feedback","Ouyang et al.",https://arxiv.org/pdf/2203.02155,tutorials/02-building/08-instructgpt.md
+9,02-building,09-lora,2106.09685,"LoRA: Low-Rank Adaptation of Large Language Models","Hu et al.",https://arxiv.org/pdf/2106.09685,tutorials/02-building/09-lora.md
+10,02-building,10-react,2210.03629,"ReAct: Synergizing Reasoning and Acting in Language Models","Yao et al.",https://arxiv.org/pdf/2210.03629,tutorials/02-building/10-react.md
+11,03-evaluation-and-code,11-mmlu,2009.03300,"Measuring Massive Multitask Language Understanding","Hendrycks et al.",https://arxiv.org/pdf/2009.03300,tutorials/03-evaluation-and-code/11-mmlu.md
+12,03-evaluation-and-code,12-truthfulqa,2109.07958,"TruthfulQA: Measuring How Models Mimic Human Falsehoods","Lin et al.",https://arxiv.org/pdf/2109.07958,tutorials/03-evaluation-and-code/12-truthfulqa.md
+13,03-evaluation-and-code,13-helm,2211.09110,"Holistic Evaluation of Language Models","Liang et al.",https://arxiv.org/pdf/2211.09110,tutorials/03-evaluation-and-code/13-helm.md
+14,03-evaluation-and-code,14-humaneval,2107.03374,"Evaluating Large Language Models Trained on Code","Chen et al.",https://arxiv.org/pdf/2107.03374,tutorials/03-evaluation-and-code/14-humaneval.md
+15,03-evaluation-and-code,15-repobench,2306.03091,"RepoBench: Benchmarking Repository-Level Code Auto-Completion Systems","Liu et al.",https://arxiv.org/pdf/2306.03091,tutorials/03-evaluation-and-code/15-repobench.md
+16,03-evaluation-and-code,16-swe-bench,2310.06770,"SWE-bench: Can Language Models Resolve Real-World GitHub Issues?","Jimenez et al.",https://arxiv.org/pdf/2310.06770,tutorials/03-evaluation-and-code/16-swe-bench.md
+17,04-agents-and-protocols,17-camel,2303.17760,"CAMEL: Communicative Agents for Mind Exploration of Large Scale Language Model Society","Li et al.",https://arxiv.org/pdf/2303.17760,tutorials/04-agents-and-protocols/17-camel.md
+18,04-agents-and-protocols,18-autogen,2308.08155,"AutoGen: Enabling Next-Gen LLM Applications via Multi-Agent Conversation","Wu et al.",https://arxiv.org/pdf/2308.08155,tutorials/04-agents-and-protocols/18-autogen.md
+19,04-agents-and-protocols,19-metagpt,2308.00352,"MetaGPT: Meta Programming for Multi-Agent Collaborative Framework","Hong et al.",https://arxiv.org/pdf/2308.00352,tutorials/04-agents-and-protocols/19-metagpt.md
+20,04-agents-and-protocols,20-multi-agent-survey,2402.01680,"Large Language Model based Multi-Agents: A Survey of Progress and Challenges","Guo et al.",https://arxiv.org/pdf/2402.01680,tutorials/04-agents-and-protocols/20-multi-agent-survey.md
+21,04-agents-and-protocols,21-interoperability,2505.02279,"A Survey of Agent Interoperability Protocols: MCP, ACP, A2A, and ANP","Ehtesham et al.",https://arxiv.org/pdf/2505.02279,tutorials/04-agents-and-protocols/21-interoperability.md
+22,05-small-business,22-productivity,2302.06590,"The Impact of AI on Developer Productivity: Evidence from GitHub Copilot","Peng et al.",https://arxiv.org/pdf/2302.06590,tutorials/05-small-business/22-productivity.md
+23,05-small-business,23-customer-support,2304.11771,"Generative AI at Work","Brynjolfsson, Li, and Raymond",https://arxiv.org/pdf/2304.11771,tutorials/05-small-business/23-customer-support.md

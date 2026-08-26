@@ -51,6 +51,7 @@ flowchart TB
 ## Cross-cutting method
 
 - [Architecture Evolution and Decision Making](architecture-evolution/README.md): a data-driven method for evolving architecture through measurable quality-attribute scenarios, evidence-backed technology gates, trade-off scoring, decisions, and operational feedback. It includes an [interactive generic application blueprint](architecture-evolution/blueprint/README.md).
+- [LLM Learning Repository](llm-learning-repository/README.md): an ordered collection of primary papers, local PDFs, diagrams, and three-level tutorials that progress from intuition through implementation to research practice.
 
 ## How to use this area
 
