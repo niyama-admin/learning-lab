@@ -16,6 +16,10 @@ Before each stage, consult the [prerequisite map](references/prerequisite-map.md
 
 The [weekly knowledge workflow](references/weekly-curation-workflow.md) runs every Saturday, selects up to one new arXiv paper for each curriculum category, creates a Monday-Friday study plan with three-level tutorials, downloads and verifies the PDFs, and opens a review PR. Browse accepted additions in [weekly/](weekly/README.md).
 
+## Tutorial quality standard
+
+Every completed paper guide is intended to replace a first reading of the source at three levels: a self-contained intuitive explanation, an implementation-oriented practitioner treatment, and a formal researcher treatment. Guides include paper-specific findings and limitations, diagrams, equations where needed, and an appendix that teaches every prerequisite with a worked example and vetted reference. `build-guides.mjs` preserves enriched tutorials unless explicitly invoked with `--force-tutorials`.
+
 PDFs live in `papers/`; metadata and canonical URLs live in [manifest.csv](manifest.csv). Re-download deterministically with `node download-papers.mjs`.
 
 ## Curriculum

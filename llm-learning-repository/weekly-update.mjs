@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { generatePaperTutorial } from "./tutorial-authoring.mjs";
 
 const root = path.dirname(new URL(import.meta.url).pathname.replace(/^\/(.:)/, "$1"));
 const args = new Map(process.argv.slice(2).map(x => {
@@ -94,21 +95,6 @@ function fallbackGuide(paper) {
   return `## Tutorial 1 - intuition\n\n${firstSentence} In plain language, this paper asks whether a new method or observation changes what an LLM system can do, how reliably it can do it, or what it costs. Start by identifying the before-and-after comparison and one everyday analogy.\n\n## Tutorial 2 - practitioner context\n\nRead the method and evaluation sections and turn the paper into a decision: what component would change, what baseline should remain, and which user outcome would justify adoption? Reproduce the smallest reported comparison. Record model, data, prompt, code, environment, latency, cost, and failure cases. Do not infer production readiness from the abstract.\n\n## Tutorial 3 - researcher depth\n\nIdentify the estimand or central claim, the experimental unit, dataset construction, controls, uncertainty, ablations, and threats to validity. Reconstruct one table or figure, then vary one assumption. Check contamination, selection effects, evaluator dependence, compute matching, and whether the conclusion transfers beyond the reported tasks.\n\n### Research questions\n\n- Which result most strongly distinguishes the method from its baseline?\n- Which uncontrolled variable could explain the same result?\n- What ablation or replication would most reduce uncertainty?`;
 }
 
-async function llmGuide(paper) {
-  if (!process.env.MODEL_ACCESS_KEY || args.has("--no-llm")) return fallbackGuide(paper);
-  const input = `Create a concise tutorial for this arXiv paper using only the supplied metadata. Do not invent results, equations, datasets, or claims not present in the abstract. Use these exact Markdown headings: "## Tutorial 1 - intuition", "## Tutorial 2 - practitioner context", "## Tutorial 3 - researcher depth", and "### Research questions". Explain for a non-computer-scientist, then an implementing computer scientist, then a researcher. Include a simple Mermaid flowchart and clearly label uncertainties.\n\nTitle: ${paper.title}\nAuthors: ${paper.authors.join(", ")}\nCategories: ${paper.subjects.join(", ")}\nAbstract: ${paper.abstract}`;
-  const response = await fetch("https://inference.do-ai.run/v1/responses", {
-    method: "POST",
-    headers: { "Authorization": `Bearer ${process.env.MODEL_ACCESS_KEY}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: process.env.DIGITALOCEAN_MODEL_ID || "openai-gpt-5.5", input, max_output_tokens: 1800, temperature: 0.2, stream: false })
-  });
-  if (!response.ok) throw new Error(`DigitalOcean inference HTTP ${response.status}: ${(await response.text()).slice(0, 300)}`);
-  const json = await response.json();
-  const text = json.output_text || json.output?.flatMap(x => x.content ?? []).filter(x => x.type === "output_text").map(x => x.text).join("\n");
-  if (!text?.includes("Tutorial 1") || !text.includes("Tutorial 3")) throw new Error("DigitalOcean model response lacked required tutorial sections");
-  return text.trim();
-}
-
 async function fetchFeed() {
   if (args.get("--feed-file")) return fs.readFileSync(path.resolve(args.get("--feed-file")), "utf8");
   const query = encodeURIComponent("cat:cs.CL OR cat:cs.AI OR cat:cs.LG OR cat:cs.SE OR cat:cs.MA OR cat:cs.HC");
@@ -155,8 +141,15 @@ async function generate() {
     const pdf = path.join(paperRoot, `${paper.id}.pdf`);
     await downloadPdf(paper, pdf);
     let tutorial;
-    try { tutorial = await llmGuide(paper); }
-    catch (error) { console.warn(`${paper.id}: LLM enrichment failed; using fallback: ${error.message}`); tutorial = fallbackGuide(paper); }
+    try {
+      tutorial = args.has("--no-llm") ? fallbackGuide(paper) : await generatePaperTutorial({
+        paper: { ...paper, authors: paper.authors.join(", ") }, pdfPath: pdf
+      });
+    } catch (error) {
+      if (process.env.REQUIRE_THOROUGH_TUTORIALS === "true") throw error;
+      console.warn(`${paper.id}: full-paper authoring failed; writing a draft fallback: ${error.message}`);
+      tutorial = `> **DRAFT:** Full-paper enrichment did not run. Do not merge this guide as a finished tutorial.\n\n${fallbackGuide(paper)}`;
+    }
     const filename = `${paper.day.toLowerCase()}-${paper.category}-${slugify(paper.title)}.md`;
     const guide = `# ${paper.day}: ${paper.title}\n\n> **Category:** ${paper.categoryLabel}  \n> **Authors:** ${paper.authors.join(", ")}  \n> **Published:** ${paper.published.slice(0, 10)}  \n> **Sources:** [arXiv abstract](https://arxiv.org/abs/${paper.id}) · [local PDF](../papers/${paper.id}.pdf)  \n> **Selection score:** ${paper.score} (keyword relevance and recency; not a quality verdict)\n\n## Abstract\n\n${paper.abstract}\n\n${tutorial}\n\n## Daily study plan (60-90 minutes)\n\n1. **15 min:** Read Tutorial 1, abstract, figures, and conclusion; give a five-minute teach-back.\n2. **25 min:** Read Tutorial 2 and methods; write the smallest baseline comparison.\n3. **25 min:** Read Tutorial 3 and results; inspect one table, uncertainty estimate, or ablation.\n4. **15 min:** Record claim, evidence, assumption, failure mode, and next experiment.\n5. **10 min:** Link the paper to one earlier curriculum paper and note what changed.\n`;
     fs.writeFileSync(path.join(guideRoot, filename), guide);

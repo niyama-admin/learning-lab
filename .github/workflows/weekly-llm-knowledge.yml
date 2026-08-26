@@ -27,12 +27,16 @@ jobs:
     env:
       MODEL_ACCESS_KEY: ${{ secrets.MODEL_ACCESS_KEY }}
       DIGITALOCEAN_MODEL_ID: ${{ vars.DIGITALOCEAN_MODEL_ID }}
+      REQUIRE_THOROUGH_TUTORIALS: "true"
     steps:
       - name: Check out main
         uses: actions/checkout@v6
         with:
           ref: main
           fetch-depth: 0
+
+      - name: Install PDF text extraction
+        run: sudo apt-get update && sudo apt-get install -y poppler-utils
 
       - name: Fetch, select, summarize, and download
         working-directory: llm-learning-repository

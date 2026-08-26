@@ -1,0 +1,65 @@
+name: Enrich core LLM tutorials
+
+on:
+  workflow_dispatch:
+    inputs:
+      only:
+        description: "Optional arXiv ID, slug, or stage; blank processes all 23 papers"
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: enrich-core-llm-tutorials
+  cancel-in-progress: false
+
+jobs:
+  author:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 180
+    env:
+      MODEL_ACCESS_KEY: ${{ secrets.MODEL_ACCESS_KEY }}
+      DIGITALOCEAN_MODEL_ID: ${{ vars.DIGITALOCEAN_MODEL_ID }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Install PDF text extraction
+        run: sudo apt-get update && sudo apt-get install -y poppler-utils
+
+      - name: Author full-paper tutorials
+        working-directory: llm-learning-repository
+        run: node enrich-core-tutorials.mjs ${{ inputs.only && format('--only={0}', inputs.only) || '' }}
+
+      - name: Validate detailed tutorials
+        working-directory: llm-learning-repository
+        run: |
+          node verify-repository.mjs
+          node verify-detailed-tutorials.mjs
+
+      - name: Open tutorial review PR
+        uses: peter-evans/create-pull-request@v8.1.1
+        with:
+          add-paths: llm-learning-repository/tutorials
+          branch: automation/enrich-core-llm-tutorials
+          delete-branch: true
+          commit-message: enrich-core-llm-tutorials
+          title: "Replace skeletal LLM notes with full-paper tutorials"
+          body: |
+            Rewrites the core paper guides from the complete local PDFs.
+
+            Each guide contains:
+            - a self-contained intuitive tutorial;
+            - an implementation-oriented practitioner tutorial;
+            - a formal researcher tutorial;
+            - paper-specific prerequisite appendices with worked examples and vetted references;
+            - diagrams, quantitative findings, limitations, glossary, and source boundaries.
+
+            Generated material must be reviewed against the source PDFs before merge.
+          labels: documentation, automated
