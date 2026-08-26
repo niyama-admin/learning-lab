@@ -76,23 +76,32 @@ async function createModelResponse(input) {
     const body = usesChatCompletions
       ? { model, messages: [{ role: "user", content: input }], max_tokens: 14_000, temperature: 0.15, stream: false }
       : { model, input, max_output_tokens: 14_000, temperature: 0.15, stream: false };
-    const response = await fetch(`https://inference.do-ai.run/v1/${endpoint}`, {
-      method: "POST",
-      headers: { "Authorization": `Bearer ${process.env.MODEL_ACCESS_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(20 * 60 * 1000)
-    });
-    if (response.ok) {
-      resolvedModel = model;
-      console.log(`DigitalOcean model: ${model}`);
-      return response.json();
+    for (let requestAttempt = 1; requestAttempt <= 4; requestAttempt++) {
+      const response = await fetch(`https://inference.do-ai.run/v1/${endpoint}`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${process.env.MODEL_ACCESS_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(20 * 60 * 1000)
+      });
+      if (response.ok) {
+        resolvedModel = model;
+        console.log(`DigitalOcean model: ${model}`);
+        return response.json();
+      }
+      const detail = (await response.text()).slice(0, 500);
+      if (response.status === 429 && requestAttempt < 4) {
+        const delayMs = 15_000 * (2 ** (requestAttempt - 1));
+        console.warn(`${model}: serverless capacity busy; retrying in ${delayMs / 1000}s (${requestAttempt}/4)`);
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+        continue;
+      }
+      failures.push(`${model}: HTTP ${response.status} ${detail}`);
+      const unavailable = (response.status === 403 && /not available|subscription tier/i.test(detail))
+        || (response.status === 404 && /model not found|not a responses model/i.test(detail));
+      if (configured || !unavailable) throw new Error(`DigitalOcean inference failed: ${failures.join(" | ")}`);
+      console.warn(`${model} is unavailable for this tier; trying the next serverless model`);
+      break;
     }
-    const detail = (await response.text()).slice(0, 500);
-    failures.push(`${model}: HTTP ${response.status} ${detail}`);
-    const unavailable = (response.status === 403 && /not available|subscription tier/i.test(detail))
-      || (response.status === 404 && /model not found|not a responses model/i.test(detail));
-    if (configured || !unavailable) throw new Error(`DigitalOcean inference failed: ${failures.join(" | ")}`);
-    console.warn(`${model} is unavailable for this tier; trying the next serverless model`);
   }
   throw new Error(`No candidate DigitalOcean serverless model is available: ${failures.join(" | ")}`);
 }
@@ -280,7 +289,7 @@ export async function generatePaperTutorial({ paper, pdfPath }) {
   if (!process.env.MODEL_ACCESS_KEY) throw new Error("MODEL_ACCESS_KEY is required for full-paper tutorial authoring");
   const grounding = await extractGroundingText(pdfPath);
   const authoredParts = new Array(parts.length);
-  const partConcurrency = Math.min(4, parts.length);
+  const partConcurrency = Math.min(2, parts.length);
   let nextPart = 0;
   async function authorPartWorker() {
     while (nextPart < parts.length) {
