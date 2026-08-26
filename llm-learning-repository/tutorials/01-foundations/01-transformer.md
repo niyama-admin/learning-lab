@@ -91,8 +91,8 @@ The encoder consists of a stack of N = 6 identical layers, each comprising two s
 ### Mermaid Implementation Diagram
 ```mermaid
 graph LR;
-    A[Input Tokens] -->|Embedding|> B(Input Embeddings);
-    B -->|Positional Encoding|> C[Input Embeddings with Positional Encoding];
+    A[Input Tokens] -->|Embedding| B(Input Embeddings);
+    B -->|Positional Encoding| C[Input Embeddings with Positional Encoding];
     C --> D[Encoder];
     D --> E[Encoder Output];
     E --> F[Decoder];
@@ -318,7 +318,7 @@ BLEU uses clipped n-gram precisions p_n, weights w_n that sum to one, and a brev
 Use candidate "the cat sat here" and reference "the cat sat there" with a deliberately simplified BLEU-2 calculation. Clipped unigram precision is 3/4 = 0.75. Matching bigrams are "the cat" and "cat sat", so bigram precision is 2/3. The lengths are equal, hence BP = 1. With weights 1/2 and 1/2, BLEU-2 = exp(0.5 log(0.75) + 0.5 log(2/3)) = sqrt(0.75 x 2/3) = sqrt(0.5) = 0.7071, often displayed as 70.71. This toy calculation is not the paper's corpus BLEU configuration; it demonstrates the geometric mean and keeps the score within [0,1].
 
 #### How this paper uses it
-The Transformer model is evaluated using metrics such as BLEU score, which measures the quality of the generated translations (PDF page 8). The authors report BLEU scores on the WMT 2014 English-German and English-French test sets, and compare their results to those of other state-of-the-art models. The use of BLEU score as a evaluation metric implies that the authors are measuring the statistical uncertainty of the model's performance, as BLEU score is a statistical measure of translation quality.
+The Transformer model is evaluated using BLEU, an automatic corpus-level translation metric (PDF page 8). The authors report BLEU scores on the WMT 2014 English-German and English-French test sets and compare them with prior systems. BLEU supplies a point estimate under a specific tokenization and reference set; it does not itself measure statistical uncertainty. The paper does not report confidence intervals or a resampling analysis for the headline BLEU differences, so a replication should add paired bootstrap resampling at the sentence level while preserving corpus-level BLEU computation.
 
 The authors also report perplexity scores on the development set, which measure the model's uncertainty in predicting the next token in the output sequence (PDF page 9). The use of perplexity as a evaluation metric provides insight into the model's ability to capture the statistical patterns in the data.
 
@@ -362,7 +362,7 @@ Suppose a controlled 1,000-case evaluation finds 30 predefined critical failures
 #### How this paper uses it
 The Transformer model is evaluated for its validity and reliability on a range of tasks, including machine translation and English constituency parsing (PDF pages 8-10). The authors report that their model achieves state-of-the-art results on these tasks, and provide analysis of the attention mechanisms to understand how the model is making predictions (PDF pages 13-15).
 
-The authors do not explicitly discuss the safety and governance of their model, but the use of regularization techniques such as dropout and label smoothing implies that they are taking steps to prevent overfitting and ensure that the model is well-behaved (PDF page 8). The authors also release their code and models, which allows other researchers to verify and build upon their work (PDF page 10).
+The authors do not explicitly evaluate safety or governance. Dropout and label smoothing address statistical generalization and optimization; they do not establish security, privacy, fairness, or safe behavior. Likewise, releasing code supports scrutiny and reproduction but is not a governance control by itself. Those properties need separate threat models, evaluations, access controls, incident procedures, and human accountability.
 
 #### Common misconceptions
 Accuracy is not reliability, an attention map is not automatically an explanation, and reproducibility is not the same as validity. Absence of a safety discussion in an older paper is not evidence of safety. Governance is not a model feature; it is an organizational control system around data, development, evaluation, deployment, and incident response.
@@ -383,7 +383,7 @@ Accuracy is not reliability, an attention map is not automatically an explanatio
 *   Symbol: $d_f$ represents the dimensionality of the inner-layer in the position-wise feed-forward networks, which is 2048.
 *   Acronym: BLEU - Bilingual Evaluation Understudy, a metric used to evaluate the quality of machine translation.
 *   Acronym: WMT - Workshop on Machine Translation, a dataset used for machine translation tasks.
-*   Dataset: WMT 2014 English-German and English-Franch translation tasks are used to evaluate the model's performance.
+*   Dataset: WMT 2014 English-German and English-French translation tasks are used to evaluate the model's performance.
 *   Term: Self-attention, sometimes called intra-attention, is an attention mechanism relating different positions of a single sequence to compute a representation of the sequence.
 *   Term: Multi-Head Attention is a mechanism that allows the model to jointly attend to information from different representation subspaces at different positions.
 
