@@ -189,15 +189,16 @@ Reconstruct the experimental design, datasets, baselines, metrics, ablations, qu
 Analyze limitations, threats to internal and external validity, alternative explanations, and what the evidence does not establish. Then provide detailed replication, ablation, and research-extension studies with hypotheses, controls, measurements, acceptance or rejection criteria, and possible interpretations. Clearly distinguish critiques implied by the paper from your synthesis.`
   },
   ...[
-    [1, "mathematical representations such as vectors, matrices, probability, or geometry"],
-    [2, "learning, optimization, loss functions, or the pre-existing mechanism on which the contribution builds"],
-    [3, "the paper's application domain, task formulation, data representation, or historical modeling context"],
-    [4, "evaluation metrics, statistical comparison, uncertainty, experimental design, or causal interpretation"],
-    [5, "implementation, algorithms, computational complexity, distributed systems, repositories, or protocols"],
-    [6, "validity, reliability, security, governance, human factors, or operational risk"]
-  ].map(([number, lens]) => ({
+    [1, "mathematical representations such as vectors, matrices, probability, or geometry", "Deisenroth, Faisal, and Ong, Mathematics for Machine Learning."],
+    [2, "learning, optimization, loss functions, or the pre-existing mechanism on which the contribution builds", "Goodfellow, Bengio, and Courville, Deep Learning."],
+    [3, "the paper's application domain, task formulation, data representation, or historical modeling context", "Jurafsky and Martin, Speech and Language Processing, 3rd-edition online draft."],
+    [4, "evaluation metrics, statistical comparison, uncertainty, experimental design, or causal interpretation", "Wasserman, All of Statistics."],
+    [5, "implementation, algorithms, computational complexity, distributed systems, repositories, or protocols", "Goodfellow, Bengio, and Courville, Deep Learning; Kleppmann, Designing Data-Intensive Applications."],
+    [6, "validity, reliability, security, governance, human factors, or operational risk", "NIST AI Risk Management Framework 1.0; Wasserman, All of Statistics."]
+  ].map(([number, lens, requiredReference]) => ({
     name: `prerequisite-${number}`,
     prerequisiteNumber: number,
+    requiredReference,
     minimumCharacters: 2_000,
     headings: number === 1 ? ["## Appendix - Prerequisites"] : [],
     instructions: `Write only prerequisite ${number}. ${number === 1 ? "Begin with the exact heading ## Appendix - Prerequisites, followed by" : "Begin with"} a heading of the form "### Prerequisite ${number} - Specific concept name".
@@ -242,6 +243,14 @@ function partProblems(text, part) {
   return problems;
 }
 
+function normalizePrerequisiteReferences(text, part) {
+  if (!text || !part.name.startsWith("prerequisite-")) return text;
+  const marker = /(?:\*\*References:\*\*|\*\*References\*\*:|#{3,4}\s+References|^References:)/gmi;
+  const matches = [...text.matchAll(marker)];
+  const body = matches.length ? text.slice(0, matches.at(-1).index).trimEnd() : text.trimEnd();
+  return `${body}\n\n**References:** ${part.requiredReference}`;
+}
+
 function promptForPart(paper, grounding, part, previousProblems = []) {
   return `You are authoring one chapter of a rigorous, self-contained tutorial that can replace a first reading of the supplied research paper. This is not a reading guide, outline, or list of instructions. Explain the paper itself. Every paper-specific claim must be supported by the supplied PDF text. Explicitly say when the extracted text does not establish a detail. Do not add a document title or wrap the answer in an outer code fence.
 
@@ -279,7 +288,8 @@ export async function generatePaperTutorial({ paper, pdfPath }) {
       const part = parts[index];
       let problems = [];
       for (let attempt = 1; attempt <= 2; attempt++) {
-        const text = outputText(await createModelResponse(promptForPart(paper, grounding, part, problems)))?.trim();
+        const rawText = outputText(await createModelResponse(promptForPart(paper, grounding, part, problems)))?.trim();
+        const text = normalizePrerequisiteReferences(rawText, part);
         problems = partProblems(text, part);
         if (!problems.length) {
           console.log(`${paper.id}/${part.name}: accepted ${text.length} characters`);
