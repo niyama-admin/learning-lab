@@ -54,7 +54,7 @@ export async function extractGroundingText(pdfPath, maxChars = 220_000) {
 }
 
 function outputText(json) {
-  return json.output_text || json.output?.flatMap(item => item.content ?? [])
+  return json.output_text || json.choices?.[0]?.message?.content || json.output?.flatMap(item => item.content ?? [])
     .filter(item => item.type === "output_text").map(item => item.text).join("\n");
 }
 
@@ -71,10 +71,15 @@ async function createModelResponse(input) {
   const candidates = resolvedModel ? [resolvedModel] : configured ? [configured] : defaultModelCandidates;
   const failures = [];
   for (const model of candidates) {
-    const response = await fetch("https://inference.do-ai.run/v1/responses", {
+    const usesChatCompletions = /^(llama|alibaba-|deepseek-|mistral)/.test(model);
+    const endpoint = usesChatCompletions ? "chat/completions" : "responses";
+    const body = usesChatCompletions
+      ? { model, messages: [{ role: "user", content: input }], max_tokens: 14_000, temperature: 0.15, stream: false }
+      : { model, input, max_output_tokens: 14_000, temperature: 0.15, stream: false };
+    const response = await fetch(`https://inference.do-ai.run/v1/${endpoint}`, {
       method: "POST",
       headers: { "Authorization": `Bearer ${process.env.MODEL_ACCESS_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model, input, max_output_tokens: 14_000, temperature: 0.15, stream: false }),
+      body: JSON.stringify(body),
       signal: AbortSignal.timeout(20 * 60 * 1000)
     });
     if (response.ok) {
