@@ -441,7 +441,7 @@ Analyze limitations and threats to internal/external validity, alternative expla
 ### Prerequisite 4 - Measurement and statistical uncertainty
 ### Prerequisite 5 - Algorithms, parallelism, and systems cost
 ### Prerequisite 6 - Validity, reliability, safety, and governance
-Explain which concrete equations, representations, data, metrics, algorithms, assumptions, or decisions depend on each lens. Cite supplied PDF page markers when useful. Do not add general tutorials, arithmetic examples, references, or the Appendix heading; the build inserts independently verified teaching modules around these mappings.`
+Explain which concrete equations, representations, data, metrics, algorithms, assumptions, or decisions depend on each lens. Cite supplied PDF page markers when useful. For prerequisite 4, explicitly distinguish a reported metric from statistical uncertainty; never claim that using BLEU or another score means uncertainty was measured unless the paper reports an uncertainty method. For prerequisite 6, never infer safety or governance from regularization, benchmark accuracy, interpretability visualizations, code release, or reproducibility; state plainly when the paper does not evaluate those properties. Do not add general tutorials, arithmetic examples, references, or the Appendix heading; the build inserts independently verified teaching modules around these mappings.`
   },
   {
     name: "glossary",
