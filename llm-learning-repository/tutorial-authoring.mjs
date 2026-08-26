@@ -113,20 +113,34 @@ function qualityProblems(text) {
 
 const parts = [
   {
-    name: "intuition",
-    minimumCharacters: 5_000,
-    headings: ["## Paper at a glance", "## Concept map", "## Tutorial 1 - Intuitive understanding"],
+    name: "overview",
+    minimumCharacters: 3_000,
+    headings: ["## Paper at a glance", "## Concept map"],
     instructions: `Write only these sections, using the exact headings shown:
 ## Paper at a glance
-Give the research question, central contribution, method, headline findings, and scope in a compact table. Quantitative values must match the paper.
+Give the research question, prior problem, central contribution, method, headline findings, and scope in a compact table. Quantitative values must match the paper. Follow the table with a concise explanation of why the paper mattered at publication time.
 ## Concept map
-Give a valid Mermaid diagram showing the paper's causal or computational flow, then explain every node and connection in prose.
+Give a valid Mermaid diagram showing the paper's causal or computational flow, then explain every node and connection in prose.`
+  },
+  {
+    name: "intuition-method",
+    minimumCharacters: 3_500,
+    headings: ["## Tutorial 1 - Intuitive understanding"],
+    instructions: `Write only the first half of the intuitive tutorial with the exact heading:
 ## Tutorial 1 - Intuitive understanding
-Write 900-1,300 words for an intelligent reader without computer-science training. Use a running analogy, explain every essential term, walk through the method step by step, report the actual evidence and findings, discuss limitations and what the work does not prove, and end with a teach-back recap.`
+Write for an intelligent reader without computer-science training. Establish a running everyday analogy, explain the problem and every essential term, then walk through the paper's method and mechanisms step by step. Do not assume programming or mathematics. Make the analogy precise enough to show where it breaks.`
+  },
+  {
+    name: "intuition-evidence",
+    minimumCharacters: 3_000,
+    headings: ["### What the experiments show - and do not show"],
+    instructions: `Write only the second half of the intuitive tutorial with the exact heading:
+### What the experiments show - and do not show
+Explain the experimental comparisons, actual headline numbers, meaning of the results, practical implications, limitations, and what the work does not prove in plain language. Reconnect the evidence to the running analogy without overstating it. End with a substantial teach-back recap a reader can use to test understanding.`
   },
   {
     name: "practitioner-architecture",
-    minimumCharacters: 5_000,
+    minimumCharacters: 3_500,
     headings: ["## Tutorial 2 - Practitioner understanding"],
     instructions: `Write only this section with the exact heading:
 ## Tutorial 2 - Practitioner understanding
@@ -134,7 +148,7 @@ This is the architecture-and-implementation half of the practitioner tutorial. E
   },
   {
     name: "practitioner-evaluation",
-    minimumCharacters: 4_500,
+    minimumCharacters: 3_000,
     headings: ["### Evaluation, operations, and reproduction"],
     instructions: `Write only this continuation of the practitioner tutorial with the exact heading:
 ### Evaluation, operations, and reproduction
@@ -142,7 +156,7 @@ Explain the paper's datasets, training and evaluation design, baselines, metrics
   },
   {
     name: "researcher-formal",
-    minimumCharacters: 6_000,
+    minimumCharacters: 3_500,
     headings: ["## Tutorial 3 - Researcher understanding"],
     instructions: `Write only this section with the exact heading:
 ## Tutorial 3 - Researcher understanding
@@ -150,23 +164,37 @@ This is the formal-method half of the researcher tutorial. Reconstruct the forma
   },
   {
     name: "researcher-evidence",
-    minimumCharacters: 6_000,
-    headings: ["### Evidence, validity, replication, and extensions"],
+    minimumCharacters: 3_000,
+    headings: ["### Experimental evidence and quantitative reconstruction"],
     instructions: `Write only this continuation of the researcher tutorial with the exact heading:
-### Evidence, validity, replication, and extensions
-Reconstruct the experimental design, baselines, metrics, ablations, quantitative results, uncertainty, limitations, threats to validity, and what the evidence does and does not establish. Relate results back to the formal claims. Distinguish evidence in the paper from your synthesis. Provide detailed replication, ablation, and research-extension studies with hypotheses, controls, measurements, and possible interpretations.`
+### Experimental evidence and quantitative reconstruction
+Reconstruct the experimental design, datasets, baselines, metrics, ablations, quantitative results, and reported uncertainty in research-level detail. Connect each important comparison to the claim it supports, and identify comparisons that are absent. Distinguish evidence in the paper from your synthesis.`
+  },
+  {
+    name: "researcher-validity",
+    minimumCharacters: 3_000,
+    headings: ["### Validity, replication, ablations, and extensions"],
+    instructions: `Write only this final continuation of the researcher tutorial with the exact heading:
+### Validity, replication, ablations, and extensions
+Analyze limitations, threats to internal and external validity, alternative explanations, and what the evidence does not establish. Then provide detailed replication, ablation, and research-extension studies with hypotheses, controls, measurements, acceptance or rejection criteria, and possible interpretations. Clearly distinguish critiques implied by the paper from your synthesis.`
   },
   {
     name: "prerequisites",
-    minimumCharacters: 6_000,
-    headings: ["## Appendix - Prerequisites", "## Paper-specific glossary", "## Source boundaries and further reading"],
-    instructions: `Write only these sections, using the exact headings shown:
+    minimumCharacters: 5_000,
+    headings: ["## Appendix - Prerequisites"],
+    instructions: `Write only this section with the exact heading:
 ## Appendix - Prerequisites
-Identify every prerequisite actually needed to understand this specific paper. For each, use a heading of the form "### Prerequisite N - Concept" and provide an intuitive explanation, formal definition or equation where relevant, a small worked example, exactly how the paper uses it, common misconceptions, and 1-3 references from the vetted shelf. At least three prerequisites are required; complex papers should have more. Do not merely list references.
+Identify every prerequisite actually needed to understand this specific paper. For each, use a heading of the form "### Prerequisite N - Concept" and provide an intuitive explanation, formal definition or equation where relevant, a small worked example, exactly how the paper uses it, common misconceptions, and 1-3 references from the vetted shelf. At least three prerequisites are required; complex papers should have more. Do not merely list references.`
+  },
+  {
+    name: "glossary",
+    minimumCharacters: 2_500,
+    headings: ["## Paper-specific glossary", "## Source boundaries and further reading"],
+    instructions: `Write only these sections, using the exact headings shown:
 ## Paper-specific glossary
 Define all symbols, acronyms, datasets, benchmarks, protocols, and specialized terms needed to understand the tutorial.
 ## Source boundaries and further reading
-State extraction limits, distinguish the original paper from prerequisite references, and link the arXiv abstract.`
+State extraction limits, distinguish the original paper from prerequisite references, link the arXiv abstract using the supplied arXiv ID, and explain which claims should still be checked in the original paper.`
   }
 ];
 
@@ -176,9 +204,9 @@ function partProblems(text, part) {
     problems.push(`only ${text?.length ?? 0} characters; minimum is ${part.minimumCharacters}`);
   }
   for (const heading of part.headings) if (!text?.includes(heading)) problems.push(`missing heading: ${heading}`);
-  if (part.name === "intuition" && !text?.includes("```mermaid")) problems.push("missing Mermaid concept map");
+  if (part.name === "overview" && !text?.includes("```mermaid")) problems.push("missing Mermaid concept map");
   if (part.name === "practitioner-architecture" && !text?.includes("```")) problems.push("missing implementation diagram or pseudocode");
-  if (part.name === "researcher-evidence" && (text?.match(/limitations?|threats? to validity/gi) ?? []).length < 2) {
+  if (part.name === "researcher-validity" && (text?.match(/limitations?|threats? to validity/gi) ?? []).length < 2) {
     problems.push("insufficient limitations and validity analysis");
   }
   if (part.name === "prerequisites" && (text?.match(/### Prerequisite /g) ?? []).length < 3) {
@@ -203,7 +231,7 @@ Writing requirements:
 - Use equations when they materially explain the method; define every symbol immediately.
 - Use plain ASCII hyphens in prose.
 - Do not fabricate quotations, citations, page numbers, results, or references.
-${part.name === "prerequisites" ? referenceShelf : ""}
+${part.name === "prerequisites" || part.name === "glossary" ? referenceShelf : ""}
 ${previousProblems.length ? `A previous draft failed quality checks: ${previousProblems.join("; ")}. Rewrite the entire tutorial and fix every issue.` : ""}
 
 SOURCE PDF TEXT
@@ -214,19 +242,30 @@ ${grounding.text}`;
 export async function generatePaperTutorial({ paper, pdfPath }) {
   if (!process.env.MODEL_ACCESS_KEY) throw new Error("MODEL_ACCESS_KEY is required for full-paper tutorial authoring");
   const grounding = await extractGroundingText(pdfPath);
-  const authoredParts = await Promise.all(parts.map(async part => {
-    let problems = [];
-    for (let attempt = 1; attempt <= 2; attempt++) {
-      const text = outputText(await createModelResponse(promptForPart(paper, grounding, part, problems)))?.trim();
-      problems = partProblems(text, part);
-      if (!problems.length) {
-        console.log(`${paper.id}/${part.name}: accepted ${text.length} characters`);
-        return text;
+  const authoredParts = new Array(parts.length);
+  const partConcurrency = Math.min(4, parts.length);
+  let nextPart = 0;
+  async function authorPartWorker() {
+    while (nextPart < parts.length) {
+      const index = nextPart++;
+      const part = parts[index];
+      let problems = [];
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        const text = outputText(await createModelResponse(promptForPart(paper, grounding, part, problems)))?.trim();
+        problems = partProblems(text, part);
+        if (!problems.length) {
+          console.log(`${paper.id}/${part.name}: accepted ${text.length} characters`);
+          authoredParts[index] = text;
+          break;
+        }
+        console.warn(`${paper.id}/${part.name}: attempt ${attempt} failed: ${problems.join("; ")}`);
       }
-      console.warn(`${paper.id}/${part.name}: attempt ${attempt} failed: ${problems.join("; ")}`);
+      if (!authoredParts[index]) {
+        throw new Error(`${paper.id}/${part.name}: failed quality checks after two attempts: ${problems.join("; ")}`);
+      }
     }
-    throw new Error(`${paper.id}/${part.name}: failed quality checks after two attempts: ${problems.join("; ")}`);
-  }));
+  }
+  await Promise.all(Array.from({ length: partConcurrency }, () => authorPartWorker()));
   const tutorial = `# ${paper.title} - Complete Tutorial\n\n${authoredParts.join("\n\n")}\n`;
   const problems = qualityProblems(tutorial);
   if (problems.length) throw new Error(`${paper.id}: assembled tutorial failed quality checks: ${problems.join("; ")}`);
