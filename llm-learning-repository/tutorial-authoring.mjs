@@ -60,10 +60,10 @@ function outputText(json) {
 
 let resolvedModel;
 const defaultModelCandidates = [
-  "llama3.3-70b-instruct",
-  "openai-gpt-oss-120b",
-  "alibaba-qwen3-32b",
-  "openai-gpt-oss-20b"
+  "llama-4-maverick",
+  "qwen3.5-397b-a17b",
+  "deepseek-4-flash",
+  "kimi-k2.5"
 ];
 
 async function createModelResponse(input) {
@@ -89,7 +89,8 @@ async function createModelResponse(input) {
     }
     const detail = (await response.text()).slice(0, 500);
     failures.push(`${model}: HTTP ${response.status} ${detail}`);
-    const unavailable = response.status === 403 && /not available|subscription tier/i.test(detail);
+    const unavailable = (response.status === 403 && /not available|subscription tier/i.test(detail))
+      || (response.status === 404 && /model not found|not a responses model/i.test(detail));
     if (configured || !unavailable) throw new Error(`DigitalOcean inference failed: ${failures.join(" | ")}`);
     console.warn(`${model} is unavailable for this tier; trying the next serverless model`);
   }
