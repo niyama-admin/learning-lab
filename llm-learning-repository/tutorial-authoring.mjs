@@ -60,8 +60,8 @@ function outputText(json) {
 
 let resolvedModel;
 const defaultModelCandidates = [
-  "openai-gpt-oss-120b",
   "llama3.3-70b-instruct",
+  "openai-gpt-oss-120b",
   "alibaba-qwen3-32b",
   "openai-gpt-oss-20b"
 ];
@@ -74,7 +74,8 @@ async function createModelResponse(input) {
     const response = await fetch("https://inference.do-ai.run/v1/responses", {
       method: "POST",
       headers: { "Authorization": `Bearer ${process.env.MODEL_ACCESS_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model, input, max_output_tokens: 9_000, temperature: 0.15, stream: false })
+      body: JSON.stringify({ model, input, max_output_tokens: 14_000, temperature: 0.15, stream: false }),
+      signal: AbortSignal.timeout(20 * 60 * 1000)
     });
     if (response.ok) {
       resolvedModel = model;

@@ -24,6 +24,7 @@ jobs:
     env:
       MODEL_ACCESS_KEY: ${{ secrets.MODEL_ACCESS_KEY }}
       DIGITALOCEAN_MODEL_ID: ${{ vars.DIGITALOCEAN_MODEL_ID }}
+      TUTORIAL_CONCURRENCY: "3"
     steps:
       - uses: actions/checkout@v6
         with:
