@@ -199,12 +199,14 @@ Teach exactly three additional prerequisites needed to understand this paper, nu
   {
     name: "glossary",
     minimumCharacters: 2_000,
-    headings: ["## Paper-specific glossary", "## Source boundaries and further reading"],
+    headings: ["## Paper-specific glossary", "## Source boundaries and further reading", "## Checkpoint"],
     instructions: `Write only these sections, using the exact headings shown:
 ## Paper-specific glossary
 Define all symbols, acronyms, datasets, benchmarks, protocols, and specialized terms needed to understand the tutorial.
 ## Source boundaries and further reading
-State extraction limits, distinguish the original paper from prerequisite references, link the arXiv abstract using the supplied arXiv ID, and explain which claims should still be checked in the original paper.`
+State extraction limits, distinguish the original paper from prerequisite references, link the arXiv abstract using the supplied arXiv ID, and explain which claims should still be checked in the original paper.
+## Checkpoint
+Give separate, concrete teach-back questions and completion criteria for the intuitive reader, practitioner, and researcher. The criteria must test understanding of this paper rather than generic study habits.`
   }
 ];
 
