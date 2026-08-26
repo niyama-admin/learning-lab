@@ -4,11 +4,15 @@ import { verifyDetailedTutorial } from "./tutorial-authoring.mjs";
 
 const root = path.dirname(new URL(import.meta.url).pathname.replace(/^\/(.:)/, "$1"));
 const lines = fs.readFileSync(path.join(root, "manifest.csv"), "utf8").trim().split(/\r?\n/).slice(1);
+const onlyArg = process.argv.find((argument) => argument.startsWith("--only="));
+const only = onlyArg?.slice("--only=".length).trim();
 let checked = 0;
 for (const line of lines) {
   const match = line.match(/^\d+,([^,]+),([^,]+),([^,]+),/);
   const [, stage, slug, id] = match;
+  if (only && ![stage, slug, id].includes(only)) continue;
   verifyDetailedTutorial(fs.readFileSync(path.join(root, "tutorials", stage, `${slug}.md`), "utf8"), id);
   checked++;
 }
+if (checked === 0) throw new Error(`No tutorial matched --only=${only}`);
 console.log(`verified ${checked} detailed tutorials`);

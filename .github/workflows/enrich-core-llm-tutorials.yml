@@ -41,7 +41,7 @@ jobs:
         working-directory: llm-learning-repository
         run: |
           node verify-repository.mjs
-          node verify-detailed-tutorials.mjs
+          node verify-detailed-tutorials.mjs ${{ inputs.only && format('--only={0}', inputs.only) || '' }}
 
       - name: Open tutorial review PR
         uses: peter-evans/create-pull-request@v8.1.1
