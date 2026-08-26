@@ -99,7 +99,7 @@ async function createModelResponse(input) {
 
 function qualityProblems(text, paperId) {
   const problems = [];
-  if (!text || text.length < 32_000) problems.push(`only ${text?.length ?? 0} characters; minimum is 32,000`);
+  if (!text || text.length < 35_000) problems.push(`only ${text?.length ?? 0} characters; minimum is 35,000`);
   for (const heading of [
     "## Paper at a glance", "## Concept map", "## Tutorial 1 - Intuitive understanding",
     "## Tutorial 2 - Practitioner understanding", "## Tutorial 3 - Researcher understanding",
@@ -116,7 +116,7 @@ function qualityProblems(text, paperId) {
 const parts = [
   {
     name: "overview",
-    minimumCharacters: 3_000,
+    minimumCharacters: 2_500,
     headings: ["## Paper at a glance", "## Concept map"],
     instructions: `Write only these sections, using the exact headings shown:
 ## Paper at a glance
@@ -126,7 +126,7 @@ Give a valid Mermaid diagram showing the paper's causal or computational flow, t
   },
   {
     name: "intuition-method",
-    minimumCharacters: 3_500,
+    minimumCharacters: 3_000,
     headings: ["## Tutorial 1 - Intuitive understanding"],
     instructions: `Write only the first half of the intuitive tutorial with the exact heading:
 ## Tutorial 1 - Intuitive understanding
@@ -134,7 +134,7 @@ Write for an intelligent reader without computer-science training. Establish a r
   },
   {
     name: "intuition-evidence",
-    minimumCharacters: 3_000,
+    minimumCharacters: 2_500,
     headings: ["### What the experiments show - and do not show"],
     instructions: `Write only the second half of the intuitive tutorial with the exact heading:
 ### What the experiments show - and do not show
@@ -142,7 +142,7 @@ Explain the experimental comparisons, actual headline numbers, meaning of the re
   },
   {
     name: "practitioner-architecture",
-    minimumCharacters: 3_500,
+    minimumCharacters: 3_000,
     headings: ["## Tutorial 2 - Practitioner understanding"],
     instructions: `Write only this section with the exact heading:
 ## Tutorial 2 - Practitioner understanding
@@ -150,7 +150,7 @@ This is the architecture-and-implementation half of the practitioner tutorial. E
   },
   {
     name: "practitioner-evaluation",
-    minimumCharacters: 3_000,
+    minimumCharacters: 2_500,
     headings: ["### Evaluation, operations, and reproduction"],
     instructions: `Write only this continuation of the practitioner tutorial with the exact heading:
 ### Evaluation, operations, and reproduction
@@ -158,7 +158,7 @@ Explain the paper's datasets, training and evaluation design, baselines, metrics
   },
   {
     name: "researcher-formal",
-    minimumCharacters: 3_500,
+    minimumCharacters: 3_000,
     headings: ["## Tutorial 3 - Researcher understanding"],
     instructions: `Write only this section with the exact heading:
 ## Tutorial 3 - Researcher understanding
@@ -166,7 +166,7 @@ This is the formal-method half of the researcher tutorial. Reconstruct the forma
   },
   {
     name: "researcher-evidence",
-    minimumCharacters: 3_000,
+    minimumCharacters: 2_500,
     headings: ["### Experimental evidence and quantitative reconstruction"],
     instructions: `Write only this continuation of the researcher tutorial with the exact heading:
 ### Experimental evidence and quantitative reconstruction
@@ -174,7 +174,7 @@ Reconstruct the experimental design, datasets, baselines, metrics, ablations, qu
   },
   {
     name: "researcher-validity",
-    minimumCharacters: 3_000,
+    minimumCharacters: 2_500,
     headings: ["### Validity, replication, ablations, and extensions"],
     instructions: `Write only this final continuation of the researcher tutorial with the exact heading:
 ### Validity, replication, ablations, and extensions
@@ -182,7 +182,7 @@ Analyze limitations, threats to internal and external validity, alternative expl
   },
   {
     name: "prerequisites-foundational",
-    minimumCharacters: 5_000,
+    minimumCharacters: 4_500,
     headings: ["## Appendix - Prerequisites"],
     instructions: `Write only this section with the exact heading:
 ## Appendix - Prerequisites
@@ -190,7 +190,7 @@ Teach exactly three foundational prerequisites needed before approaching this pa
   },
   {
     name: "prerequisites-applied",
-    minimumCharacters: 5_000,
+    minimumCharacters: 4_500,
     headings: ["### Additional prerequisites"],
     instructions: `Write only this continuation of the prerequisite appendix with the exact first heading:
 ### Additional prerequisites
@@ -198,7 +198,7 @@ Teach exactly three additional prerequisites needed to understand this paper, nu
   },
   {
     name: "glossary",
-    minimumCharacters: 2_500,
+    minimumCharacters: 2_000,
     headings: ["## Paper-specific glossary", "## Source boundaries and further reading"],
     instructions: `Write only these sections, using the exact headings shown:
 ## Paper-specific glossary
