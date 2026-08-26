@@ -97,6 +97,14 @@ async function createModelResponse(input) {
   throw new Error(`No candidate DigitalOcean serverless model is available: ${failures.join(" | ")}`);
 }
 
+function referenceBlockCount(text) {
+  return (text?.match(/(?:\*\*References:\*\*|\*\*References\*\*:|#{3,4}\s+References|^References:)/gmi) ?? []).length;
+}
+
+function hasVettedReference(text) {
+  return /Strang|Deisenroth|Goodfellow|Murphy|Bishop|Jurafsky|Sutton|Barto|Boyd|Vandenberghe|Wasserman|Pearl|Glymour|Jewell|Kleppmann|Burns|Beda|Hightower|NIST|OWASP|RFC 8259|RFC 9110|JSON-RPC|OAuth/i.test(text ?? "");
+}
+
 function qualityProblems(text, paperId) {
   const problems = [];
   if (!text || text.length < 45_000) problems.push(`only ${text?.length ?? 0} characters; minimum is 45,000`);
@@ -107,7 +115,7 @@ function qualityProblems(text, paperId) {
   ]) if (!text?.includes(heading)) problems.push(`missing heading: ${heading}`);
   if (!text?.includes("```mermaid")) problems.push("missing Mermaid diagram");
   if ((text?.match(/### Prerequisite /g) ?? []).length < 6) problems.push("fewer than six explained prerequisites");
-  if ((text?.match(/\*\*References:\*\*/g) ?? []).length < 6) problems.push("fewer than six prerequisite reference blocks");
+  if (referenceBlockCount(text) < 6) problems.push("fewer than six prerequisite reference blocks");
   if ((text?.match(/limitations?|threats? to validity/gi) ?? []).length < 2) problems.push("insufficient treatment of limitations");
   if (paperId && !text?.includes(`https://arxiv.org/abs/${paperId}`)) problems.push("missing direct arXiv abstract link");
   return problems;
@@ -225,8 +233,11 @@ function partProblems(text, part) {
   if (part.name.startsWith("prerequisite-") && !text?.includes(`### Prerequisite ${part.prerequisiteNumber} -`)) {
     problems.push(`missing prerequisite ${part.prerequisiteNumber} heading`);
   }
-  if (part.name.startsWith("prerequisite-") && (text?.match(/\*\*References:\*\*/g) ?? []).length < 1) {
+  if (part.name.startsWith("prerequisite-") && referenceBlockCount(text) < 1) {
     problems.push("missing prerequisite reference block");
+  }
+  if (part.name.startsWith("prerequisite-") && !hasVettedReference(text)) {
+    problems.push("missing vetted-shelf reference");
   }
   return problems;
 }
