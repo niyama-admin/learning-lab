@@ -60,9 +60,9 @@ function outputText(json) {
 
 let resolvedModel;
 const defaultModelCandidates = [
+  "llama-4-maverick",
   "qwen3.5-397b-a17b",
   "deepseek-4-flash",
-  "llama-4-maverick",
   "kimi-k2.5"
 ];
 
