@@ -99,7 +99,7 @@ async function createModelResponse(input) {
 
 function qualityProblems(text) {
   const problems = [];
-  if (!text || text.length < 35_000) problems.push(`only ${text?.length ?? 0} characters; minimum is 35,000`);
+  if (!text || text.length < 32_000) problems.push(`only ${text?.length ?? 0} characters; minimum is 32,000`);
   for (const heading of [
     "## Paper at a glance", "## Concept map", "## Tutorial 1 - Intuitive understanding",
     "## Tutorial 2 - Practitioner understanding", "## Tutorial 3 - Researcher understanding",
@@ -114,7 +114,7 @@ function qualityProblems(text) {
 const parts = [
   {
     name: "intuition",
-    minimumCharacters: 7_000,
+    minimumCharacters: 5_000,
     headings: ["## Paper at a glance", "## Concept map", "## Tutorial 1 - Intuitive understanding"],
     instructions: `Write only these sections, using the exact headings shown:
 ## Paper at a glance
@@ -125,24 +125,40 @@ Give a valid Mermaid diagram showing the paper's causal or computational flow, t
 Write 900-1,300 words for an intelligent reader without computer-science training. Use a running analogy, explain every essential term, walk through the method step by step, report the actual evidence and findings, discuss limitations and what the work does not prove, and end with a teach-back recap.`
   },
   {
-    name: "practitioner",
-    minimumCharacters: 9_000,
+    name: "practitioner-architecture",
+    minimumCharacters: 5_000,
     headings: ["## Tutorial 2 - Practitioner understanding"],
     instructions: `Write only this section with the exact heading:
 ## Tutorial 2 - Practitioner understanding
-Write 1,600-2,400 words for a computer-science practitioner. Explain architecture and data flow, algorithms, inputs and outputs, implementation choices, evaluation design, key tables and quantitative findings, operational trade-offs, failure modes, and a concrete reproduction or adoption plan. Translate every important equation into words and define symbols. Include at least one implementation-oriented Mermaid diagram or pseudocode block. This must teach the implementation, not merely recommend that the reader inspect the paper.`
+This is the architecture-and-implementation half of the practitioner tutorial. Explain architecture and data flow, algorithms, inputs and outputs, implementation choices, and important equations in concrete detail for a computer-science practitioner. Define every symbol. Include at least one implementation-oriented Mermaid diagram or pseudocode block. Build enough detail that a practitioner could implement a faithful small-scale version. Do not discuss evaluation superficially; that is covered in the following subchapter.`
   },
   {
-    name: "researcher",
-    minimumCharacters: 11_000,
+    name: "practitioner-evaluation",
+    minimumCharacters: 4_500,
+    headings: ["### Evaluation, operations, and reproduction"],
+    instructions: `Write only this continuation of the practitioner tutorial with the exact heading:
+### Evaluation, operations, and reproduction
+Explain the paper's datasets, training and evaluation design, baselines, metrics, key tables and quantitative findings, operational trade-offs, failure modes, and a concrete reproduction or adoption plan. State configurations and numerical results supported by the PDF. Separate faithful reproduction from modern implementation advice. Make the plan specific enough to execute, including inputs, checkpoints, diagnostics, expected outputs, and acceptance criteria.`
+  },
+  {
+    name: "researcher-formal",
+    minimumCharacters: 6_000,
     headings: ["## Tutorial 3 - Researcher understanding"],
     instructions: `Write only this section with the exact heading:
 ## Tutorial 3 - Researcher understanding
-Write 2,200-3,200 words. Reconstruct the formal problem, assumptions, objective functions and equations, experimental design, baselines, metrics, ablations, quantitative results, uncertainty, limitations and threats to validity, relationship to prior work, and research extensions. Distinguish evidence in the paper from your synthesis. Include detailed proposed replication and ablation studies. Define all notation and reason carefully about what the experiments do and do not establish.`
+This is the formal-method half of the researcher tutorial. Reconstruct the formal problem, assumptions, objective functions, equations, algorithms, and relationship to prior work. Derive or unpack the important equations step by step and define all notation. Identify implicit assumptions and explain why each design choice matters. Distinguish statements in the paper from your synthesis. Reserve detailed experimental critique for the following subchapter.`
+  },
+  {
+    name: "researcher-evidence",
+    minimumCharacters: 6_000,
+    headings: ["### Evidence, validity, replication, and extensions"],
+    instructions: `Write only this continuation of the researcher tutorial with the exact heading:
+### Evidence, validity, replication, and extensions
+Reconstruct the experimental design, baselines, metrics, ablations, quantitative results, uncertainty, limitations, threats to validity, and what the evidence does and does not establish. Relate results back to the formal claims. Distinguish evidence in the paper from your synthesis. Provide detailed replication, ablation, and research-extension studies with hypotheses, controls, measurements, and possible interpretations.`
   },
   {
     name: "prerequisites",
-    minimumCharacters: 8_000,
+    minimumCharacters: 6_000,
     headings: ["## Appendix - Prerequisites", "## Paper-specific glossary", "## Source boundaries and further reading"],
     instructions: `Write only these sections, using the exact headings shown:
 ## Appendix - Prerequisites
@@ -161,8 +177,8 @@ function partProblems(text, part) {
   }
   for (const heading of part.headings) if (!text?.includes(heading)) problems.push(`missing heading: ${heading}`);
   if (part.name === "intuition" && !text?.includes("```mermaid")) problems.push("missing Mermaid concept map");
-  if (part.name === "practitioner" && !text?.includes("```")) problems.push("missing implementation diagram or pseudocode");
-  if (part.name === "researcher" && (text?.match(/limitations?|threats? to validity/gi) ?? []).length < 2) {
+  if (part.name === "practitioner-architecture" && !text?.includes("```")) problems.push("missing implementation diagram or pseudocode");
+  if (part.name === "researcher-evidence" && (text?.match(/limitations?|threats? to validity/gi) ?? []).length < 2) {
     problems.push("insufficient limitations and validity analysis");
   }
   if (part.name === "prerequisites" && (text?.match(/### Prerequisite /g) ?? []).length < 3) {
