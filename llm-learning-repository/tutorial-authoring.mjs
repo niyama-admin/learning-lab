@@ -59,23 +59,34 @@ function outputText(json) {
 }
 
 let resolvedModel;
+let lastModelSuccessAt = 0;
 const defaultModelCandidates = [
   "llama-4-maverick",
+  "kimi-k2.5",
   "qwen3.5-397b-a17b",
-  "deepseek-4-flash",
-  "kimi-k2.5"
+  "deepseek-4-flash"
 ];
 
 async function createModelResponse(input) {
+  const requestIntervalMs = Number.parseInt(process.env.TUTORIAL_REQUEST_INTERVAL_MS || "120000", 10);
+  const remainingInterval = lastModelSuccessAt + requestIntervalMs - Date.now();
+  if (lastModelSuccessAt && remainingInterval > 0) {
+    console.log(`DigitalOcean pacing: waiting ${Math.ceil(remainingInterval / 1000)}s before the next long-form request`);
+    await new Promise(resolve => setTimeout(resolve, remainingInterval));
+  }
   const configured = process.env.DIGITALOCEAN_MODEL_ID?.trim();
-  const candidates = resolvedModel ? [resolvedModel] : configured ? [configured] : defaultModelCandidates;
+  const candidates = configured
+    ? [configured]
+    : resolvedModel
+      ? [resolvedModel, ...defaultModelCandidates.filter(model => model !== resolvedModel)]
+      : defaultModelCandidates;
   const failures = [];
   for (const model of candidates) {
     const usesChatCompletions = /^(llama|qwen|alibaba-|deepseek-|mistral)/.test(model);
     const endpoint = usesChatCompletions ? "chat/completions" : "responses";
     const body = usesChatCompletions
-      ? { model, messages: [{ role: "user", content: input }], max_tokens: 14_000, temperature: 0.15, stream: false }
-      : { model, input, max_output_tokens: 14_000, temperature: 0.15, stream: false };
+      ? { model, messages: [{ role: "user", content: input }], max_tokens: 8_000, temperature: 0.15, stream: false }
+      : { model, input, max_output_tokens: 8_000, temperature: 0.15, stream: false };
     for (let requestAttempt = 1; requestAttempt <= 3; requestAttempt++) {
       let response;
       try {
@@ -93,13 +104,14 @@ async function createModelResponse(input) {
       }
       if (response.ok) {
         resolvedModel = model;
+        lastModelSuccessAt = Date.now();
         console.log(`DigitalOcean model: ${model}`);
         return response.json();
       }
       const detail = (await response.text()).slice(0, 500);
       if (response.status === 429 && requestAttempt < 3) {
-        const delayMs = 15_000 * (2 ** (requestAttempt - 1));
-        console.warn(`${model}: serverless capacity busy; retrying in ${delayMs / 1000}s (${requestAttempt}/4)`);
+        const delayMs = 30_000 * (2 ** (requestAttempt - 1));
+        console.warn(`${model}: serverless capacity busy; retrying in ${delayMs / 1000}s (${requestAttempt}/3)`);
         await new Promise(resolve => setTimeout(resolve, delayMs));
         continue;
       }
@@ -126,9 +138,130 @@ function hasVettedReference(text) {
   return /Strang|Deisenroth|Goodfellow|Murphy|Bishop|Jurafsky|Sutton|Barto|Boyd|Vandenberghe|Wasserman|Pearl|Glymour|Jewell|Kleppmann|Burns|Beda|Hightower|NIST|OWASP|RFC 8259|RFC 9110|JSON-RPC|OAuth/i.test(text ?? "");
 }
 
+function paperConnection(text) {
+  const match = text?.match(/#### How this paper uses it\s*([\s\S]*?)(?=\n#### |\n### |\n\*\*References:|$)/i);
+  return match?.[1]?.trim() || text?.trim() || "The supplied draft did not establish a paper-specific connection; consult the main tutorials and original paper before relying on this prerequisite mapping.";
+}
+
+function prerequisiteTemplate(part, sourceText) {
+  const connection = paperConnection(sourceText);
+  const appendix = part.prerequisiteNumber === 1 ? "## Appendix - Prerequisites\n\n" : "";
+  const templates = {
+    1: `### Prerequisite 1 - Vector and matrix representations
+
+#### Intuition
+A model cannot operate directly on a word, code fragment, or image patch. It first represents that item as a vector: an ordered list of numbers. A vector is like a card of measured attributes, except the attributes are learned rather than hand-written. A matrix is a table of numbers that transforms many such cards at once. The dot product compares two equal-length vectors by multiplying matching entries and adding the results. In attention, that comparison becomes a relevance score; it is not automatically a semantic truth or a probability.
+
+#### Formal view
+Let X have n rows (tokens) and d columns (features), so X is in R^(n x d). Learned projections W_Q, W_K, and W_V map each row to queries Q, keys K, and values V. If Q and K are in R^(n x d_k), then QK^T is in R^(n x n): every query is compared with every key. Row-wise softmax converts each row of scaled scores into nonnegative weights that sum to one. If V is in R^(n x d_v), multiplying the n x n weight matrix by V produces an n x d_v output. Checking these shapes is a practical way to catch incorrect equations.
+
+#### Worked example
+Use two tokens with Q = K = [[1, 0], [0, 1]], V = [[10, 0], [0, 20]], and d_k = 2. First, QK^T = [[1, 0], [0, 1]]. Divide by sqrt(2), giving scores [[0.7071, 0], [0, 0.7071]]. Because exp(0.7071) is about 2.028 and exp(0) is 1, the first row's weights are [2.028/(2.028+1), 1/(2.028+1)] = [0.6698, 0.3302]. The second row reverses them: [0.3302, 0.6698]. Multiplying by V gives [[6.698, 6.604], [3.302, 13.396]]. Each output is a weighted blend of the two value rows, and each weight row sums to one.
+
+#### How this paper uses it
+${connection}
+
+#### Common misconceptions
+Vector coordinates are not individually interpretable by default. A large dot product can reflect vector scale as well as alignment. Matrix multiplication is not element-wise multiplication, and softmax must be applied across a specified axis. Finally, attention weights describe the model's computation; they do not by themselves prove a human-style explanation.
+
+**References:** ${part.requiredReference}`,
+    2: `### Prerequisite 2 - Gradient-based learning and objectives
+
+#### Intuition
+Training is repeated error correction. The model makes a prediction, a loss function assigns a numerical penalty, and a gradient tells how a tiny change to each parameter would change that penalty. The optimizer takes a controlled step downhill. The loss defines what the training process rewards; it is not the same thing as the final human-facing quality measure. Regularization, schedules, and validation checks shape how well learning transfers beyond the training examples.
+
+#### Formal view
+For parameters theta and loss L(theta), gradient descent uses theta_next = theta - eta times grad L(theta), where eta is the learning rate. Adam maintains moving averages of gradients and squared gradients before applying a bias-corrected, parameter-wise update. The Transformer schedule is eta(s) = d_model^(-1/2) times min(s^(-1/2), s times w^(-3/2)), where s is the step and w is the number of warm-up steps. Before w, the second term dominates and the rate rises linearly; after w, the first dominates and it falls with the inverse square root of the step.
+
+#### Worked example
+First take L(theta) = (theta - 3)^2 / 2. At theta = 0, the gradient is theta - 3 = -3. With eta = 0.1, theta_next = 0 - 0.1(-3) = 0.3. The loss falls from 4.5 to (0.3 - 3)^2/2 = 3.645. For the paper's schedule with d_model = 512 and w = 4000, evaluate the peak at s = 4000. Both terms inside min equal 1/sqrt(4000) = 0.015811. Also 1/sqrt(512) = 0.044194. Therefore eta(4000) = 0.044194 x 0.015811 = 0.0006988. This verifies both the warm-up boundary and the scale.
+
+#### How this paper uses it
+${connection}
+
+#### Common misconceptions
+A gradient is a local slope, not a guarantee of the global best solution. A lower training loss need not mean better deployment behavior. Adam's internal adaptive scaling does not remove the need for an external schedule. Reported optimizer settings, batch construction, regularization, random seeds, and stopping rules are all part of a reproducible training procedure.
+
+**References:** ${part.requiredReference}`,
+    3: `### Prerequisite 3 - Task and data representation
+
+#### Intuition
+A task must specify what enters the system, what it should produce, and how examples are encoded. Text is split into tokens, token identifiers select learned embedding rows, and positions are added because a bag of words does not preserve order. Tokenization is therefore part of the model's behavior: it controls sequence length, vocabulary coverage, and what counts as one prediction step.
+
+#### Formal view
+Let a vocabulary contain V tokens and let E be an embedding table in R^(V x d). A token identifier t selects row E[t], equivalently the one-hot row vector e_t^T times E. With fixed sinusoidal position encodings, PE(pos, 2i) = sin(pos / 10000^(2i/d)) and PE(pos, 2i+1) = cos(pos / 10000^(2i/d)). The model receives E[t] + PE(pos). During autoregressive decoding, the target sequence is shifted so position j predicts the next token while a causal mask prevents access to later target positions.
+
+#### Worked example
+Suppose V = 4, d = 2, and E = [[1,0], [0,1], [1,1], [-1,1]]. Token 2 has one-hot row [0,0,1,0], so [0,0,1,0]E = [1,1]; the dimensions are (1 x 4)(4 x 2) = (1 x 2). For positional encoding with d = 4 at pos = 1, dimensions 0 and 1 use i = 0: sin(1) = 0.84147 and cos(1) = 0.54030. Dimensions 2 and 3 use i = 1 and denominator 10000^(2/4) = 100: sin(0.01) = 0.0099998 and cos(0.01) = 0.99995. Thus PE(1) is approximately [0.84147, 0.54030, 0.0099998, 0.99995].
+
+#### How this paper uses it
+${connection}
+
+#### Common misconceptions
+Tokens are not necessarily words, and a vocabulary size is not a count of concepts. Position encodings do not supply syntax by themselves; they only make order available to later layers. Training-time teacher forcing and inference-time generation expose the decoder to different histories, which matters when reproducing evaluation.
+
+**References:** ${part.requiredReference}`,
+    4: `### Prerequisite 4 - Measurement and statistical uncertainty
+
+#### Intuition
+An evaluation metric is a measuring instrument. It emphasizes some properties and ignores others, so it must be matched to the claim. A score from one finite test set also varies with the sampled examples, decoding settings, and implementation. A difference between two systems is meaningful only when the metric is correctly computed and the uncertainty and comparison conditions are understood.
+
+#### Formal view
+BLEU uses clipped n-gram precisions p_n, weights w_n that sum to one, and a brevity penalty BP. Its core formula is BLEU = BP times exp(sum_n w_n log p_n), not exp(sum_n w_n p_n). When candidate length c is at least reference length r, BP = 1; otherwise BP = exp(1 - r/c). Corpus BLEU aggregates counts before taking the geometric mean. Statistical uncertainty is normally estimated by resampling complete evaluation units, such as paired bootstrap resampling of sentences, because n-gram events are dependent and a simple binomial model is not a full BLEU confidence interval.
+
+#### Worked example
+Use candidate "the cat sat here" and reference "the cat sat there" with a deliberately simplified BLEU-2 calculation. Clipped unigram precision is 3/4 = 0.75. Matching bigrams are "the cat" and "cat sat", so bigram precision is 2/3. The lengths are equal, hence BP = 1. With weights 1/2 and 1/2, BLEU-2 = exp(0.5 log(0.75) + 0.5 log(2/3)) = sqrt(0.75 x 2/3) = sqrt(0.5) = 0.7071, often displayed as 70.71. This toy calculation is not the paper's corpus BLEU configuration; it demonstrates the geometric mean and keeps the score within [0,1].
+
+#### How this paper uses it
+${connection}
+
+#### Common misconceptions
+BLEU is not a percentage of correct translations and does not directly measure meaning, safety, or user value. Scores are not comparable when tokenization, casing, references, or evaluation scripts differ. Training-set size does not determine test-score uncertainty. Lack of a reported confidence interval is not evidence that uncertainty is zero.
+
+**References:** ${part.requiredReference}`,
+    5: `### Prerequisite 5 - Algorithms, parallelism, and systems cost
+
+#### Intuition
+An algorithm's cost is both how much total work it performs and how much of that work must happen in sequence. Recurrence touches tokens one after another, which limits parallelism. Full self-attention compares all token pairs at once, which is highly parallel but creates a square n by n score matrix. Which design is cheaper therefore depends on sequence length, representation width, hardware, memory, and the operations counted.
+
+#### Formal view
+Using the comparison in the Transformer paper, a self-attention layer has leading interaction cost O(n^2 d) and O(1) sequential depth, while a recurrent layer has O(n d^2) cost and O(n) sequential depth. Their simplified interaction costs are equal when n = d. Multi-head attention does not remove the quadratic n^2 term; splitting d across heads keeps the combined attention width near d. Real implementations also pay O(n d^2) for learned projections and feed-forward layers, so Table 1's layer comparison must not be mistaken for a complete wall-clock model.
+
+#### Worked example
+Let n = 128 and d = 512. The simplified self-attention interaction count is n^2 d = 128^2 x 512 = 8,388,608 multiply-add scale units. The recurrent comparison is n d^2 = 128 x 512^2 = 33,554,432, four times larger, but it also requires 128 sequential token steps. At n = 1024 and the same d, attention costs 1024^2 x 512 = 536,870,912, whereas recurrence costs 1024 x 512^2 = 268,435,456; attention is now twice the simplified arithmetic. The break-even n = d = 512 is visible in both calculations.
+
+#### How this paper uses it
+${connection}
+
+#### Common misconceptions
+Big-O notation hides constants, memory traffic, kernel efficiency, and hardware utilization. Parallelizable does not mean free, and multi-head attention remains quadratic in sequence length. Training cost, inference latency, throughput, and peak memory are different measurements. A faithful reproduction should report hardware, precision, batch and sequence shapes, software versions, and the actual profiler measurements alongside asymptotic analysis.
+
+**References:** ${part.requiredReference}`,
+    6: `### Prerequisite 6 - Validity, reliability, safety, and governance
+
+#### Intuition
+Strong benchmark performance answers a narrow question: how the tested system behaved under specified conditions. Validity asks whether the experiment supports the stated claim. Reliability asks whether behavior is stable across reruns and realistic inputs. Safety considers harms when the system fails or is misused. Governance assigns owners, review gates, records, monitoring, and response procedures. These are distinct from model accuracy and must not be inferred from it.
+
+#### Formal view
+Internal validity concerns whether the intervention caused the measured difference rather than a confound such as extra compute or data. External validity concerns transfer to other populations, languages, tasks, and operating conditions. Measurement validity concerns whether a metric represents the desired property. A deployment risk record can combine a defined hazard, exposed population, likelihood evidence, impact, control, residual risk, owner, and monitoring trigger. NIST AI RMF organizes work into Govern, Map, Measure, and Manage; it does not certify a model merely because a benchmark improved.
+
+#### Worked example
+Suppose a controlled 1,000-case evaluation finds 30 predefined critical failures. The observed rate is 30/1000 = 0.03, or 3%. A rough binomial standard error is sqrt(0.03 x 0.97 / 1000) = sqrt(0.0000291) = 0.00539. A simple normal-approximation 95% interval is 0.03 plus or minus 1.96 x 0.00539, approximately [0.0194, 0.0406]. This calculation does not prove future safety: clustered cases, distribution shift, ambiguous labels, or adversarial users violate its assumptions. A governance decision would also specify severity, an acceptable threshold, human escalation, monitoring, and who may approve release.
+
+#### How this paper uses it
+${connection}
+
+#### Common misconceptions
+Accuracy is not reliability, an attention map is not automatically an explanation, and reproducibility is not the same as validity. Absence of a safety discussion in an older paper is not evidence of safety. Governance is not a model feature; it is an organizational control system around data, development, evaluation, deployment, and incident response.
+
+**References:** ${part.requiredReference}`
+  };
+  return `${appendix}${templates[part.prerequisiteNumber]}`;
+}
+
 function qualityProblems(text, paperId) {
   const problems = [];
-  if (!text || text.length < 45_000) problems.push(`only ${text?.length ?? 0} characters; minimum is 45,000`);
+  if (!text || text.length < 35_000) problems.push(`only ${text?.length ?? 0} characters; minimum is 35,000`);
   for (const heading of [
     "## Paper at a glance", "## Concept map", "## Tutorial 1 - Intuitive understanding",
     "## Tutorial 2 - Practitioner understanding", "## Tutorial 3 - Researcher understanding",
@@ -224,10 +357,7 @@ Analyze limitations, threats to internal and external validity, alternative expl
     headings: number === 1
       ? ["## Appendix - Prerequisites", `### Prerequisite ${number} - ${concept}`]
       : [`### Prerequisite ${number} - ${concept}`],
-    instructions: `Write only prerequisite ${number}. ${number === 1 ? "Begin with the exact heading ## Appendix - Prerequisites, followed by" : "Begin with"} the exact heading "### Prerequisite ${number} - ${concept}".
-Teach the paper-specific foundations within this distinct lens: ${lens}. The title is prescribed so the six appendix entries remain non-overlapping; do not rename it, drift into another lens, or repeat another appendix. Select the sub-concepts from this lens that are actually necessary for this paper. If part of the lens is not relevant, omit that part rather than substituting a duplicate concept. Do not use the paper's novel contribution as its own prerequisite.
-
-Make this a self-contained mini-tutorial of roughly 450-700 words with all of these labeled subsections: "Intuition", "Formal view", "Worked example", "How this paper uses it", "Common misconceptions", and "References". The worked example must show intermediate steps, not merely state an answer. Recompute every matrix operation, probability, metric, and arithmetic result before answering; if an example cannot be verified, replace it with one you can verify. End with a bold "References:" line containing 1-3 exact entries from the vetted shelf. Do not cite anything outside the shelf and do not invent page or chapter numbers.`
+    instructions: `Write only the exact heading "#### How this paper uses it" followed by a 250-400 word paper-specific connection to this prerequisite lens: ${lens}. Explain which concrete equations, representations, data, metrics, algorithms, assumptions, or decisions in the supplied paper depend on the prerequisite. Cite PDF page markers from the supplied extraction when useful. Distinguish what the paper states from your interpretation. Do not teach the general prerequisite, perform new arithmetic, add references, or discuss another appendix lens; the build supplies independently verified reference-backed teaching material around this connection.`
   })),
   {
     name: "glossary",
@@ -243,6 +373,90 @@ Give separate, concrete teach-back questions and completion criteria for the int
   }
 ];
 
+const generationParts = [
+  {
+    name: "complete-intuitive",
+    minimumCharacters: 4_500,
+    headings: ["## Paper at a glance", "## Concept map", "## Tutorial 1 - Intuitive understanding", "### What the experiments show - and do not show"],
+    instructions: `Write the complete overview and intuitive tutorial using these exact headings in this order:
+## Paper at a glance
+Give the research question, prior problem, central contribution, method, headline findings, and scope in a compact table. Quantitative values must match the paper. Explain why the paper mattered at publication time.
+## Concept map
+Give a valid Mermaid diagram of the paper's causal or computational flow and explain every node and connection.
+## Tutorial 1 - Intuitive understanding
+Write for an intelligent reader without computer-science training. Establish a precise running everyday analogy, explain the problem and every essential term, then walk through the method and mechanisms step by step. State where the analogy breaks.
+### What the experiments show - and do not show
+Explain comparisons, actual headline numbers, meaning, practical implications, limitations, and what the work does not prove. End with a substantial teach-back recap. This must be a full tutorial, not an outline.`
+  },
+  {
+    name: "complete-practitioner",
+    minimumCharacters: 4_500,
+    headings: ["## Tutorial 2 - Practitioner understanding", "### Evaluation, operations, and reproduction"],
+    instructions: `Write the complete practitioner tutorial using these exact headings:
+## Tutorial 2 - Practitioner understanding
+Explain architecture, data flow, algorithms, inputs and outputs, implementation choices, and important equations for a computer-science practitioner. Define every symbol. Include a Mermaid implementation diagram or pseudocode. Give enough detail to implement a faithful small-scale version.
+### Evaluation, operations, and reproduction
+Explain datasets, training and evaluation design, baselines, metrics, key tables and quantitative findings, operational trade-offs, failure modes, and an executable reproduction/adoption plan with inputs, checkpoints, diagnostics, outputs, and acceptance criteria. Separate faithful reproduction from modern advice.`
+  },
+  {
+    name: "researcher-formal-complete",
+    minimumCharacters: 3_000,
+    headings: ["## Tutorial 3 - Researcher understanding"],
+    instructions: `Write the formal half of the researcher tutorial using this exact heading:
+## Tutorial 3 - Researcher understanding
+Reconstruct the formal problem, assumptions, objectives, equations, algorithms, and relation to prior work. Derive important equations step by step, define notation, and distinguish paper claims from synthesis. Do not add the experimental-evidence or validity headings; they are authored in the next module.`
+  },
+  {
+    name: "researcher-evidence-complete",
+    minimumCharacters: 2_500,
+    headings: ["### Experimental evidence and quantitative reconstruction"],
+    instructions: `Write the evidence reconstruction using this exact heading:
+### Experimental evidence and quantitative reconstruction
+Reconstruct datasets, baselines, metrics, ablations, numerical results, and reported uncertainty. Link comparisons to claims and identify absent comparisons. Do not add the validity heading; it is authored in the next module.`
+  },
+  {
+    name: "researcher-validity-complete",
+    minimumCharacters: 2_500,
+    headings: ["### Validity, replication, ablations, and extensions"],
+    instructions: `Write the validity and research-extension section using this exact heading:
+### Validity, replication, ablations, and extensions
+Analyze limitations and threats to internal/external validity, alternative explanations, and what is not established. Give detailed replication, ablation, and extension studies with hypotheses, controls, measurements, criteria, and interpretations.`
+  },
+  {
+    name: "prerequisites",
+    minimumCharacters: 12_000,
+    headings: [
+      "## Appendix - Prerequisites",
+      "### Prerequisite 1 - Vector and matrix representations",
+      "### Prerequisite 2 - Gradient-based learning and objectives",
+      "### Prerequisite 3 - Task and data representation",
+      "### Prerequisite 4 - Measurement and statistical uncertainty",
+      "### Prerequisite 5 - Algorithms, parallelism, and systems cost",
+      "### Prerequisite 6 - Validity, reliability, safety, and governance"
+    ],
+    instructions: `Map the paper to six prerequisite lenses. For each item, write its exact prerequisite heading followed by the exact heading #### How this paper uses it and a 250-400 word paper-specific connection. The six exact prerequisite headings are:
+### Prerequisite 1 - Vector and matrix representations
+### Prerequisite 2 - Gradient-based learning and objectives
+### Prerequisite 3 - Task and data representation
+### Prerequisite 4 - Measurement and statistical uncertainty
+### Prerequisite 5 - Algorithms, parallelism, and systems cost
+### Prerequisite 6 - Validity, reliability, safety, and governance
+Explain which concrete equations, representations, data, metrics, algorithms, assumptions, or decisions depend on each lens. Cite supplied PDF page markers when useful. For prerequisite 4, explicitly distinguish a reported metric from statistical uncertainty; never claim that using BLEU or another score means uncertainty was measured unless the paper reports an uncertainty method. For prerequisite 6, never infer safety or governance from regularization, benchmark accuracy, interpretability visualizations, code release, or reproducibility; state plainly when the paper does not evaluate those properties. Do not add general tutorials, arithmetic examples, references, or the Appendix heading; the build inserts independently verified teaching modules around these mappings.`
+  },
+  {
+    name: "glossary",
+    minimumCharacters: 2_000,
+    headings: ["## Paper-specific glossary", "## Source boundaries and further reading", "## Checkpoint"],
+    instructions: `Write only these sections using the exact headings:
+## Paper-specific glossary
+Define every symbol, acronym, dataset, benchmark, protocol, and specialized term needed for the tutorial.
+## Source boundaries and further reading
+State extraction limits, distinguish the original paper from prerequisite references, link the required arXiv abstract, and identify claims to check in the original.
+## Checkpoint
+Give separate concrete teach-back questions and completion criteria for the intuitive reader, practitioner, and researcher. Test understanding of this paper, not generic study habits.`
+  }
+];
+
 function partProblems(text, part) {
   const problems = [];
   if (!text || text.length < part.minimumCharacters) {
@@ -250,7 +464,7 @@ function partProblems(text, part) {
   }
   for (const heading of part.headings) if (!text?.includes(heading)) problems.push(`missing heading: ${heading}`);
   if (part.name === "overview" && !text?.includes("```mermaid")) problems.push("missing Mermaid concept map");
-  if (part.name === "practitioner-architecture" && !text?.includes("```")) problems.push("missing implementation diagram or pseudocode");
+  if (["practitioner-architecture", "complete-practitioner"].includes(part.name) && !text?.includes("```")) problems.push("missing implementation diagram or pseudocode");
   if (part.name === "researcher-validity" && (text?.match(/limitations?|threats? to validity/gi) ?? []).length < 2) {
     problems.push("insufficient limitations and validity analysis");
   }
@@ -267,11 +481,24 @@ function partProblems(text, part) {
 }
 
 function normalizePrerequisiteReferences(text, part) {
+  if (text && part.name === "prerequisites") {
+    const specs = [
+      [1, "Deisenroth, Faisal, and Ong, Mathematics for Machine Learning."],
+      [2, "Goodfellow, Bengio, and Courville, Deep Learning."],
+      [3, "Jurafsky and Martin, Speech and Language Processing, 3rd-edition online draft."],
+      [4, "Wasserman, All of Statistics."],
+      [5, "Goodfellow, Bengio, and Courville, Deep Learning; Kleppmann, Designing Data-Intensive Applications."],
+      [6, "NIST AI Risk Management Framework 1.0; Wasserman, All of Statistics."]
+    ];
+    return specs.map(([number, requiredReference]) => {
+      const start = text.indexOf(`### Prerequisite ${number} -`);
+      const end = number < 6 ? text.indexOf(`### Prerequisite ${number + 1} -`, start + 1) : text.length;
+      const segment = start >= 0 ? text.slice(start, end >= 0 ? end : text.length) : "";
+      return prerequisiteTemplate({ prerequisiteNumber: number, requiredReference }, segment);
+    }).join("\n\n");
+  }
   if (!text || !part.name.startsWith("prerequisite-")) return text;
-  const marker = /(?:\*\*References:\*\*|\*\*References\*\*:|#{3,4}\s+References|^References:)/gmi;
-  const matches = [...text.matchAll(marker)];
-  const body = matches.length ? text.slice(0, matches.at(-1).index).trimEnd() : text.trimEnd();
-  return `${body}\n\n**References:** ${part.requiredReference}`;
+  return prerequisiteTemplate(part, text);
 }
 
 function promptForPart(paper, grounding, part, previousProblems = []) {
@@ -291,7 +518,7 @@ Writing requirements:
 - Use equations when they materially explain the method; define every symbol immediately.
 - Use plain ASCII hyphens in prose.
 - Do not fabricate quotations, citations, page numbers, results, or references.
-${part.name.startsWith("prerequisite-") || part.name === "glossary" ? referenceShelf : ""}
+${part.name.startsWith("prerequisite-") ? referenceShelf : ""}
 ${previousProblems.length ? `A previous draft failed quality checks: ${previousProblems.join("; ")}. Rewrite the entire tutorial and fix every issue.` : ""}
 
 SOURCE PDF TEXT
@@ -302,13 +529,14 @@ ${grounding.text}`;
 export async function generatePaperTutorial({ paper, pdfPath }) {
   if (!process.env.MODEL_ACCESS_KEY) throw new Error("MODEL_ACCESS_KEY is required for full-paper tutorial authoring");
   const grounding = await extractGroundingText(pdfPath);
-  const authoredParts = new Array(parts.length);
-  const partConcurrency = Math.min(2, parts.length);
+  const authoredParts = new Array(generationParts.length);
+  const requestedPartConcurrency = Number.parseInt(process.env.TUTORIAL_PART_CONCURRENCY || "1", 10);
+  const partConcurrency = Math.min(Math.max(requestedPartConcurrency, 1), generationParts.length);
   let nextPart = 0;
   async function authorPartWorker() {
-    while (nextPart < parts.length) {
+    while (nextPart < generationParts.length) {
       const index = nextPart++;
-      const part = parts[index];
+      const part = generationParts[index];
       let problems = [];
       for (let attempt = 1; attempt <= 2; attempt++) {
         const rawText = outputText(await createModelResponse(promptForPart(paper, grounding, part, problems)))?.trim();

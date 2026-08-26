@@ -23,7 +23,7 @@ jobs:
   curate:
     runs-on: ubuntu-latest
     environment: production
-    timeout-minutes: 30
+    timeout-minutes: 240
     env:
       MODEL_ACCESS_KEY: ${{ secrets.MODEL_ACCESS_KEY }}
       DIGITALOCEAN_MODEL_ID: ${{ vars.DIGITALOCEAN_MODEL_ID }}
@@ -64,5 +64,5 @@ jobs:
             - Downloads PDFs and records SHA-256 checksums.
             - Requires human review; this workflow never auto-merges.
 
-            If `MODEL_ACCESS_KEY` is configured, summaries are enriched through DigitalOcean Serverless Inference. Otherwise the deterministic abstract-based tutorial is used.
+            Tutorials use source-grounded chapter generation, strict section-level quality gates, and deterministic verified prerequisite modules through DigitalOcean Serverless Inference using the production `MODEL_ACCESS_KEY`; the job fails rather than publishing a skeletal fallback.
           labels: documentation, automated

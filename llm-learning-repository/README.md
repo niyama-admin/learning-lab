@@ -20,6 +20,8 @@ The [weekly knowledge workflow](references/weekly-curation-workflow.md) runs eve
 
 Every completed paper guide is intended to replace a first reading of the source at three levels: a self-contained intuitive explanation, an implementation-oriented practitioner treatment, and a formal researcher treatment. Guides include paper-specific findings and limitations, diagrams, equations where needed, and an appendix that teaches at least six paper-specific prerequisites with worked examples and references restricted to the vetted shelf. `build-guides.mjs` preserves enriched tutorials unless explicitly invoked with `--force-tutorials`.
 
+The checked-in core corpus was rendered locally from reviewed, paper-specific profiles. Regenerate papers 2-23 without a hosted model or API key with `node render-local-tutorials.mjs`, then run `node verify-repository.mjs` and `node verify-detailed-tutorials.mjs`. The separate core-enrichment GitHub workflow is manual-only and is not part of local generation; do not dispatch it when the local renderer is the intended path.
+
 PDFs live in `papers/`; metadata and canonical URLs live in [manifest.csv](manifest.csv). Re-download deterministically with `node download-papers.mjs`.
 
 ## Curriculum
@@ -93,4 +95,5 @@ This is a curated foundation, not a claim that benchmark scores equal usefulness
 - `references/`: mathematics, experiments, protocols, glossary, and note templates
 - `manifest.csv`: machine-readable bibliography and paths
 - `download-papers.mjs`: checksum-friendly downloader
+- `render-local-tutorials.mjs`: deterministic, no-API local renderer for the reviewed core profiles
 - `verify-repository.mjs`: completeness and PDF signature checks
