@@ -210,20 +210,22 @@ Reconstruct the experimental design, datasets, baselines, metrics, ablations, qu
 Analyze limitations, threats to internal and external validity, alternative explanations, and what the evidence does not establish. Then provide detailed replication, ablation, and research-extension studies with hypotheses, controls, measurements, acceptance or rejection criteria, and possible interpretations. Clearly distinguish critiques implied by the paper from your synthesis.`
   },
   ...[
-    [1, "mathematical representations such as vectors, matrices, probability, or geometry", "Deisenroth, Faisal, and Ong, Mathematics for Machine Learning."],
-    [2, "learning, optimization, loss functions, or the pre-existing mechanism on which the contribution builds", "Goodfellow, Bengio, and Courville, Deep Learning."],
-    [3, "the paper's application domain, task formulation, data representation, or historical modeling context", "Jurafsky and Martin, Speech and Language Processing, 3rd-edition online draft."],
-    [4, "evaluation metrics, statistical comparison, uncertainty, experimental design, or causal interpretation", "Wasserman, All of Statistics."],
-    [5, "implementation, algorithms, computational complexity, distributed systems, repositories, or protocols", "Goodfellow, Bengio, and Courville, Deep Learning; Kleppmann, Designing Data-Intensive Applications."],
-    [6, "validity, reliability, security, governance, human factors, or operational risk", "NIST AI Risk Management Framework 1.0; Wasserman, All of Statistics."]
-  ].map(([number, lens, requiredReference]) => ({
+    [1, "Vector and matrix representations", "vectors, matrices, dot products, linear maps, probability vectors, or geometry", "Deisenroth, Faisal, and Ong, Mathematics for Machine Learning."],
+    [2, "Gradient-based learning and objectives", "learning objectives, loss functions, gradient-based optimization, regularization, or the pre-existing learning mechanism", "Goodfellow, Bengio, and Courville, Deep Learning."],
+    [3, "Task and data representation", "the application domain, task formulation, sequence modeling, tokenization, data representation, or historical modeling context", "Jurafsky and Martin, Speech and Language Processing, 3rd-edition online draft."],
+    [4, "Measurement and statistical uncertainty", "evaluation metrics, statistical comparison, sampling uncertainty, experimental design, or causal interpretation", "Wasserman, All of Statistics."],
+    [5, "Algorithms, parallelism, and systems cost", "algorithms, computational complexity, parallel execution, memory and compute cost, distributed systems, repositories, or protocols", "Goodfellow, Bengio, and Courville, Deep Learning; Kleppmann, Designing Data-Intensive Applications."],
+    [6, "Validity, reliability, safety, and governance", "validity, reliability, security, governance, human factors, or operational risk", "NIST AI Risk Management Framework 1.0; Wasserman, All of Statistics."]
+  ].map(([number, concept, lens, requiredReference]) => ({
     name: `prerequisite-${number}`,
     prerequisiteNumber: number,
     requiredReference,
     minimumCharacters: 2_000,
-    headings: number === 1 ? ["## Appendix - Prerequisites"] : [],
-    instructions: `Write only prerequisite ${number}. ${number === 1 ? "Begin with the exact heading ## Appendix - Prerequisites, followed by" : "Begin with"} a heading of the form "### Prerequisite ${number} - Specific concept name".
-Choose one prerequisite from this distinct lens: ${lens}. The other five appendix entries cover the other five lenses, so do not drift into them or repeat them. If this lens truly does not apply, choose the nearest necessary non-overlapping prerequisite and explain why it is needed. Do not use the paper's novel contribution as its own prerequisite.
+    headings: number === 1
+      ? ["## Appendix - Prerequisites", `### Prerequisite ${number} - ${concept}`]
+      : [`### Prerequisite ${number} - ${concept}`],
+    instructions: `Write only prerequisite ${number}. ${number === 1 ? "Begin with the exact heading ## Appendix - Prerequisites, followed by" : "Begin with"} the exact heading "### Prerequisite ${number} - ${concept}".
+Teach the paper-specific foundations within this distinct lens: ${lens}. The title is prescribed so the six appendix entries remain non-overlapping; do not rename it, drift into another lens, or repeat another appendix. Select the sub-concepts from this lens that are actually necessary for this paper. If part of the lens is not relevant, omit that part rather than substituting a duplicate concept. Do not use the paper's novel contribution as its own prerequisite.
 
 Make this a self-contained mini-tutorial of roughly 450-700 words with all of these labeled subsections: "Intuition", "Formal view", "Worked example", "How this paper uses it", "Common misconceptions", and "References". The worked example must show intermediate steps, not merely state an answer. Recompute every matrix operation, probability, metric, and arithmetic result before answering; if an example cannot be verified, replace it with one you can verify. End with a bold "References:" line containing 1-3 exact entries from the vetted shelf. Do not cite anything outside the shelf and do not invent page or chapter numbers.`
   })),
