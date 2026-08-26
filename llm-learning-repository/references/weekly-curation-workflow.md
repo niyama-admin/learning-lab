@@ -42,7 +42,7 @@ GitHub Actions must be allowed to create pull requests under **Settings → Acti
 
 ## Manual operation
 
-From `common/llm-learning-repository`:
+From `llm-learning-repository` in the common repository:
 
 ```text
 node weekly-update.mjs --self-test

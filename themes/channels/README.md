@@ -57,5 +57,5 @@ flowchart LR
 
 ## Arghyam reference material
 
-- [Prototype channel experience](../../../2026/2026-08-Arghyam-1/prototype/README.md)
-- [Channel adapter implementation](../../../2026/2026-08-Arghyam-1/prototype/src/channel-adapters.mjs)
+- [Prototype channel experience](https://github.com/niyama-admin/consulting/blob/main/2026/2026-08-Arghyam-1/prototype/README.md)
+- [Channel adapter implementation](https://github.com/niyama-admin/consulting/blob/main/2026/2026-08-Arghyam-1/prototype/src/channel-adapters.mjs)

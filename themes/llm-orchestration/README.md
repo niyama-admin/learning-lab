@@ -60,6 +60,6 @@ flowchart LR
 
 ## Arghyam reference material
 
-- [Agent orchestration ecosystem survey](../../../2026/2026-08-Arghyam-1/docs/agent-orchestration-ecosystem-survey.md)
-- [MCP and A2A demonstration guide](../../../2026/2026-08-Arghyam-1/docs/mcp-a2a-demo-guide.md)
-- [Prototype architecture](../../../2026/2026-08-Arghyam-1/prototype/README.md)
+- [Agent orchestration ecosystem survey](https://github.com/niyama-admin/consulting/blob/main/2026/2026-08-Arghyam-1/docs/agent-orchestration-ecosystem-survey.md)
+- [MCP and A2A demonstration guide](https://github.com/niyama-admin/consulting/blob/main/2026/2026-08-Arghyam-1/docs/mcp-a2a-demo-guide.md)
+- [Prototype architecture](https://github.com/niyama-admin/consulting/blob/main/2026/2026-08-Arghyam-1/prototype/README.md)

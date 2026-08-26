@@ -44,5 +44,5 @@ Use the simplest architecture that meets reliability, history, governance, laten
 
 ## Arghyam reference material
 
-- [Data architecture options and scale thresholds](../../../2026/2026-08-Arghyam-1/docs/data-architecture-options.md)
-- [AI in business operations and the application landscape](../../../2026/2026-08-Arghyam-1/docs/ai-in-business-operations-and-application-landscape.md)
+- [Data architecture options and scale thresholds](https://github.com/niyama-admin/consulting/blob/main/2026/2026-08-Arghyam-1/docs/data-architecture-options.md)
+- [AI in business operations and the application landscape](https://github.com/niyama-admin/consulting/blob/main/2026/2026-08-Arghyam-1/docs/ai-in-business-operations-and-application-landscape.md)

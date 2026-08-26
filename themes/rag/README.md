@@ -55,5 +55,5 @@ flowchart LR
 
 ## Arghyam reference material
 
-- [Prototype RAG corpus](../../../2026/2026-08-Arghyam-1/prototype/rag-documents/README.md)
-- [Prototype implementation](../../../2026/2026-08-Arghyam-1/prototype/README.md)
+- [Prototype RAG corpus](https://github.com/niyama-admin/consulting/blob/main/2026/2026-08-Arghyam-1/prototype/rag-documents/README.md)
+- [Prototype implementation](https://github.com/niyama-admin/consulting/blob/main/2026/2026-08-Arghyam-1/prototype/README.md)

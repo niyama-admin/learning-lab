@@ -54,5 +54,5 @@ flowchart LR
 
 ## Arghyam reference material
 
-- [AI system architecture](../../../2026/2026-08-Arghyam-1/docs/ai-system-architecture.md)
-- [Reference repository system context](../../../2026/2026-08-Arghyam-1/examples/agentic-engineering-reference/docs/agent-context/system-overview.md)
+- [AI system architecture](https://github.com/niyama-admin/consulting/blob/main/2026/2026-08-Arghyam-1/docs/ai-system-architecture.md)
+- [Reference repository system context](https://github.com/niyama-admin/consulting/blob/main/2026/2026-08-Arghyam-1/examples/agentic-engineering-reference/docs/agent-context/system-overview.md)

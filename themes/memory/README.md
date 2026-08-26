@@ -49,5 +49,5 @@ Preserve useful continuity across interactions without turning transient model c
 
 ## Arghyam reference material
 
-- [AI system architecture](../../../2026/2026-08-Arghyam-1/docs/ai-system-architecture.md)
-- [Prototype top-level agent](../../../2026/2026-08-Arghyam-1/prototype/src/top-agent.mjs)
+- [AI system architecture](https://github.com/niyama-admin/consulting/blob/main/2026/2026-08-Arghyam-1/docs/ai-system-architecture.md)
+- [Prototype top-level agent](https://github.com/niyama-admin/consulting/blob/main/2026/2026-08-Arghyam-1/prototype/src/top-agent.mjs)

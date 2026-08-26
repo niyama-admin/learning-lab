@@ -40,7 +40,7 @@ Enable teams to use coding and delivery agents to accelerate software work while
 
 ## Arghyam reference material
 
-- [Agentic engineering workflow](../../../2026/2026-08-Arghyam-1/docs/agentic-engineering-workflow.md)
-- [Brown-field adoption](../../../2026/2026-08-Arghyam-1/docs/brown-field-agentic-engineering.md)
-- [Prerequisites, metrics, and risks](../../../2026/2026-08-Arghyam-1/docs/prerequisites-metrics-risks.md)
-- [Reference repository](../../../2026/2026-08-Arghyam-1/examples/agentic-engineering-reference/README.md)
+- [Agentic engineering workflow](https://github.com/niyama-admin/consulting/blob/main/2026/2026-08-Arghyam-1/docs/agentic-engineering-workflow.md)
+- [Brown-field adoption](https://github.com/niyama-admin/consulting/blob/main/2026/2026-08-Arghyam-1/docs/brown-field-agentic-engineering.md)
+- [Prerequisites, metrics, and risks](https://github.com/niyama-admin/consulting/blob/main/2026/2026-08-Arghyam-1/docs/prerequisites-metrics-risks.md)
+- [Reference repository](https://github.com/niyama-admin/consulting/blob/main/2026/2026-08-Arghyam-1/examples/agentic-engineering-reference/README.md)

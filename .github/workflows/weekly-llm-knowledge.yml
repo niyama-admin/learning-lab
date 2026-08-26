@@ -1,0 +1,63 @@
+name: Weekly LLM knowledge update
+
+on:
+  schedule:
+    # 09:00 Asia/Kolkata every Saturday (GitHub cron is UTC).
+    - cron: "30 3 * * 6"
+  workflow_dispatch:
+    inputs:
+      week_ending:
+        description: "Optional UTC date (YYYY-MM-DD); defaults to today"
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: weekly-llm-knowledge
+  cancel-in-progress: false
+
+jobs:
+  curate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      MODEL_ACCESS_KEY: ${{ secrets.MODEL_ACCESS_KEY }}
+      DIGITALOCEAN_MODEL_ID: ${{ vars.DIGITALOCEAN_MODEL_ID }}
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Fetch, select, summarize, and download
+        working-directory: llm-learning-repository
+        run: node weekly-update.mjs ${{ inputs.week_ending && format('--week-ending={0}', inputs.week_ending) || '' }}
+
+      - name: Validate core and weekly repositories
+        working-directory: llm-learning-repository
+        run: |
+          node verify-repository.mjs
+          node weekly-update.mjs --verify
+
+      - name: Open or refresh the weekly review PR
+        uses: peter-evans/create-pull-request@v8.1.1
+        with:
+          add-paths: llm-learning-repository/weekly
+          branch: automation/weekly-llm-knowledge
+          delete-branch: true
+          commit-message: weekly-llm-knowledge-update
+          title: "Weekly LLM knowledge update"
+          body: |
+            Automated Saturday intake from arXiv.
+
+            - Selects at most one new paper for each curriculum category.
+            - Creates a Monday-Friday learning plan and three-level tutorials.
+            - Downloads PDFs and records SHA-256 checksums.
+            - Requires human review; this workflow never auto-merges.
+
+            If `MODEL_ACCESS_KEY` is configured, summaries are enriched through DigitalOcean Serverless Inference. Otherwise the deterministic abstract-based tutorial is used.
+          labels: documentation, automated
