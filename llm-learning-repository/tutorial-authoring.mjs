@@ -60,8 +60,8 @@ function outputText(json) {
 
 let resolvedModel;
 const defaultModelCandidates = [
-  "llama-4-maverick",
   "qwen3.5-397b-a17b",
+  "llama-4-maverick",
   "deepseek-4-flash",
   "kimi-k2.5"
 ];
@@ -71,7 +71,7 @@ async function createModelResponse(input) {
   const candidates = resolvedModel ? [resolvedModel] : configured ? [configured] : defaultModelCandidates;
   const failures = [];
   for (const model of candidates) {
-    const usesChatCompletions = /^(llama|alibaba-|deepseek-|mistral)/.test(model);
+    const usesChatCompletions = /^(llama|qwen|alibaba-|deepseek-|mistral)/.test(model);
     const endpoint = usesChatCompletions ? "chat/completions" : "responses";
     const body = usesChatCompletions
       ? { model, messages: [{ role: "user", content: input }], max_tokens: 14_000, temperature: 0.15, stream: false }
@@ -204,7 +204,7 @@ Analyze limitations, threats to internal and external validity, alternative expl
     instructions: `Write only prerequisite ${number}. ${number === 1 ? "Begin with the exact heading ## Appendix - Prerequisites, followed by" : "Begin with"} a heading of the form "### Prerequisite ${number} - Specific concept name".
 Choose one prerequisite from this distinct lens: ${lens}. The other five appendix entries cover the other five lenses, so do not drift into them or repeat them. If this lens truly does not apply, choose the nearest necessary non-overlapping prerequisite and explain why it is needed. Do not use the paper's novel contribution as its own prerequisite.
 
-Make this a self-contained mini-tutorial of roughly 450-700 words with all of these labeled subsections: "Intuition", "Formal view", "Worked example", "How this paper uses it", "Common misconceptions", and "References". The worked example must show intermediate steps, not merely state an answer. End with a bold "References:" line containing 1-3 exact entries from the vetted shelf. Do not cite anything outside the shelf and do not invent page or chapter numbers.`
+Make this a self-contained mini-tutorial of roughly 450-700 words with all of these labeled subsections: "Intuition", "Formal view", "Worked example", "How this paper uses it", "Common misconceptions", and "References". The worked example must show intermediate steps, not merely state an answer. Recompute every matrix operation, probability, metric, and arithmetic result before answering; if an example cannot be verified, replace it with one you can verify. End with a bold "References:" line containing 1-3 exact entries from the vetted shelf. Do not cite anything outside the shelf and do not invent page or chapter numbers.`
   })),
   {
     name: "glossary",
