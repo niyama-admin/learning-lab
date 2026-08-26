@@ -32,13 +32,13 @@ The workflow requests up to 300 recent records in `cs.CL`, `cs.AI`, `cs.LG`, `cs
 
 When the repository secret `MODEL_ACCESS_KEY` is configured, the updater calls normal DigitalOcean Serverless Inference at `https://inference.do-ai.run/v1/responses` and asks for grounded three-level tutorials based only on the supplied arXiv metadata. Set the repository variable `DIGITALOCEAN_MODEL_ID` to a serverless model ID from the DigitalOcean Model Catalog; the workflow defaults to `openai-gpt-5.5`. It does not create or invoke a DigitalOcean agent or dedicated inference deployment. Without the secret, or if the call fails, it creates a deterministic abstract-based guide so the weekly workflow remains operational.
 
-Create the model access key in DigitalOcean, then add it only as the GitHub Actions secret `MODEL_ACCESS_KEY`. Do not commit the key or place it in workflow inputs. All model inference for this workflow is billed through DigitalOcean.
+Create the model access key in DigitalOcean, then add it only as the `MODEL_ACCESS_KEY` secret in the GitHub `production` environment. Add `DIGITALOCEAN_MODEL_ID` as an optional variable in the same environment. Do not commit the key or place it in workflow inputs. All model inference for this workflow is billed through DigitalOcean.
 
 Generated text must be checked against the PDF before merge. The workflow opens or refreshes a PR and never auto-merges.
 
 ## Repository settings
 
-GitHub Actions must be allowed to create pull requests under **Settings → Actions → General → Workflow permissions**. The workflow requests only `contents: write` and `pull-requests: write`.
+GitHub Actions must be allowed to create pull requests under **Settings → Actions → General → Workflow permissions**. The workflow requests only `contents: write` and `pull-requests: write`, and the curation job is bound to the `production` environment. Environment protection rules can require reviewers before the weekly job receives its model key.
 
 ## Manual operation
 
