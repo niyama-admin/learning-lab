@@ -5,23 +5,23 @@ import { promisify } from "node:util";
 const execFileAsync = promisify(execFile);
 
 const referenceShelf = `
-Use only relevant items from this vetted prerequisite shelf. Cite book/document title, author or institution, and edition/year when known; never invent page numbers.
+Use only relevant items from this vetted prerequisite shelf. Each prerequisite must end with a bold "References:" label and 1-3 exact shelf entries. A research paper may be discussed under "How the paper uses it" but cannot substitute for a prerequisite reference. Cite book/document title, author or institution, and edition/year when known; never invent page or chapter numbers.
 
-- Gilbert Strang, Introduction to Linear Algebra, 5th ed.
-- Deisenroth, Faisal, and Ong, Mathematics for Machine Learning.
-- Goodfellow, Bengio, and Courville, Deep Learning.
-- Kevin Murphy, Probabilistic Machine Learning: An Introduction and Advanced Topics.
-- Christopher Bishop, Pattern Recognition and Machine Learning.
-- Jurafsky and Martin, Speech and Language Processing, 3rd-edition online draft.
-- Sutton and Barto, Reinforcement Learning: An Introduction, 2nd ed.
-- Boyd and Vandenberghe, Convex Optimization.
-- Wasserman, All of Statistics.
-- Pearl, Glymour, and Jewell, Causal Inference in Statistics: A Primer.
-- Kleppmann, Designing Data-Intensive Applications.
-- Burns, Beda, and Hightower, Kubernetes: Up and Running.
-- NIST AI Risk Management Framework 1.0.
-- OWASP Top 10 for Large Language Model Applications.
-- RFC 8259 (JSON), RFC 9110 (HTTP Semantics), JSON-RPC 2.0, OAuth 2.0/2.1 specifications, where protocol concepts apply.
+- Gilbert Strang, Introduction to Linear Algebra, 5th ed. - vectors, matrices, dot products, linear maps, rank, bases, eigenvalues, and singular values.
+- Deisenroth, Faisal, and Ong, Mathematics for Machine Learning - linear algebra, analytic geometry, matrix decompositions, vector calculus, probability, and continuous optimization.
+- Goodfellow, Bengio, and Courville, Deep Learning - feed-forward networks, regularization, numerical computation, gradient optimization, convolutional and sequence models, and representation learning.
+- Kevin Murphy, Probabilistic Machine Learning: An Introduction and Advanced Topics - probability, graphical models, estimation, Bayesian methods, latent variables, and modern probabilistic ML.
+- Christopher Bishop, Pattern Recognition and Machine Learning - probability, regression, classification, neural networks, kernels, mixtures, and approximate inference.
+- Jurafsky and Martin, Speech and Language Processing, 3rd-edition online draft - tokens, language modeling, embeddings, sequence-to-sequence learning, attention, transformers, NLP tasks, and evaluation.
+- Sutton and Barto, Reinforcement Learning: An Introduction, 2nd ed. - agents, policies, value functions, temporal-difference learning, policy gradients, and evaluation.
+- Boyd and Vandenberghe, Convex Optimization - convex sets and functions, constrained objectives, Lagrangians, duality, and optimization analysis.
+- Wasserman, All of Statistics - estimators, sampling distributions, confidence intervals, hypothesis tests, regression, and statistical learning.
+- Pearl, Glymour, and Jewell, Causal Inference in Statistics: A Primer - causal graphs, interventions, confounding, identification, and causal versus associational claims.
+- Kleppmann, Designing Data-Intensive Applications - distributed data, replication, partitioning, transactions, streams, consistency, and reliability.
+- Burns, Beda, and Hightower, Kubernetes: Up and Running - containers, pods, deployments, services, configuration, scaling, and operations.
+- NIST AI Risk Management Framework 1.0 - AI risk governance, measurement, management, documentation, and organizational controls.
+- OWASP Top 10 for Large Language Model Applications - prompt injection, insecure output handling, sensitive information, excessive agency, and LLM application threats.
+- RFC 8259 (JSON), RFC 9110 (HTTP Semantics), JSON-RPC 2.0, and OAuth 2.0/2.1 specifications - serialization, web semantics, remote procedure calls, authorization, and protocol interoperability.
 `;
 
 function scorePage(text, index, total) {
@@ -97,7 +97,7 @@ async function createModelResponse(input) {
   throw new Error(`No candidate DigitalOcean serverless model is available: ${failures.join(" | ")}`);
 }
 
-function qualityProblems(text) {
+function qualityProblems(text, paperId) {
   const problems = [];
   if (!text || text.length < 32_000) problems.push(`only ${text?.length ?? 0} characters; minimum is 32,000`);
   for (const heading of [
@@ -106,8 +106,10 @@ function qualityProblems(text) {
     "## Appendix - Prerequisites", "## Paper-specific glossary"
   ]) if (!text?.includes(heading)) problems.push(`missing heading: ${heading}`);
   if (!text?.includes("```mermaid")) problems.push("missing Mermaid diagram");
-  if ((text?.match(/### Prerequisite /g) ?? []).length < 3) problems.push("fewer than three explained prerequisites");
+  if ((text?.match(/### Prerequisite /g) ?? []).length < 6) problems.push("fewer than six explained prerequisites");
+  if ((text?.match(/\*\*References:\*\*/g) ?? []).length < 6) problems.push("fewer than six prerequisite reference blocks");
   if ((text?.match(/limitations?|threats? to validity/gi) ?? []).length < 3) problems.push("insufficient treatment of limitations");
+  if (paperId && !text?.includes(`https://arxiv.org/abs/${paperId}`)) problems.push("missing direct arXiv abstract link");
   return problems;
 }
 
@@ -179,12 +181,20 @@ Reconstruct the experimental design, datasets, baselines, metrics, ablations, qu
 Analyze limitations, threats to internal and external validity, alternative explanations, and what the evidence does not establish. Then provide detailed replication, ablation, and research-extension studies with hypotheses, controls, measurements, acceptance or rejection criteria, and possible interpretations. Clearly distinguish critiques implied by the paper from your synthesis.`
   },
   {
-    name: "prerequisites",
+    name: "prerequisites-foundational",
     minimumCharacters: 5_000,
     headings: ["## Appendix - Prerequisites"],
     instructions: `Write only this section with the exact heading:
 ## Appendix - Prerequisites
-Identify every prerequisite actually needed to understand this specific paper. For each, use a heading of the form "### Prerequisite N - Concept" and provide an intuitive explanation, formal definition or equation where relevant, a small worked example, exactly how the paper uses it, common misconceptions, and 1-3 references from the vetted shelf. At least three prerequisites are required; complex papers should have more. Do not merely list references.`
+Teach exactly three foundational prerequisites needed before approaching this paper, numbered 1 through 3 with headings of the form "### Prerequisite N - Concept". Choose enabling concepts such as linear algebra, probability, optimization, statistics, sequence modeling, distributed systems, or protocols - not the paper's central contribution itself. For each provide an intuitive explanation, formal definition or equation where relevant, a fully worked small example, exactly how the paper uses it, common misconceptions, and a final bold "References:" line containing 1-3 exact entries from the vetted shelf. Do not merely list references.`
+  },
+  {
+    name: "prerequisites-applied",
+    minimumCharacters: 5_000,
+    headings: ["### Additional prerequisites"],
+    instructions: `Write only this continuation of the prerequisite appendix with the exact first heading:
+### Additional prerequisites
+Teach exactly three additional prerequisites needed to understand this paper, numbered 4 through 6 with headings of the form "### Prerequisite N - Concept". Do not repeat the likely foundational concepts (basic linear algebra, probability, and optimization); choose the next layer of domain, evaluation, systems, or methodological knowledge. Do not use the paper's novel contribution as its own prerequisite. For each provide an intuitive explanation, formal definition or equation where relevant, a fully worked small example, exactly how the paper uses it, common misconceptions, and a final bold "References:" line containing 1-3 exact entries from the vetted shelf.`
   },
   {
     name: "glossary",
@@ -209,8 +219,11 @@ function partProblems(text, part) {
   if (part.name === "researcher-validity" && (text?.match(/limitations?|threats? to validity/gi) ?? []).length < 2) {
     problems.push("insufficient limitations and validity analysis");
   }
-  if (part.name === "prerequisites" && (text?.match(/### Prerequisite /g) ?? []).length < 3) {
+  if (part.name.startsWith("prerequisites-") && (text?.match(/### Prerequisite /g) ?? []).length < 3) {
     problems.push("fewer than three explained prerequisites");
+  }
+  if (part.name.startsWith("prerequisites-") && (text?.match(/\*\*References:\*\*/g) ?? []).length < 3) {
+    problems.push("fewer than three prerequisite reference blocks");
   }
   return problems;
 }
@@ -221,6 +234,7 @@ function promptForPart(paper, grounding, part, previousProblems = []) {
 Paper: ${paper.title}
 Authors: ${paper.authors}
 arXiv ID: ${paper.id}
+Required abstract URL: https://arxiv.org/abs/${paper.id}
 PDF extraction: ${grounding.selectedPages} of ${grounding.pageCount} pages${grounding.truncated ? " selected by section relevance because the paper exceeded the context budget" : " included"}.
 
 ${part.instructions}
@@ -231,7 +245,7 @@ Writing requirements:
 - Use equations when they materially explain the method; define every symbol immediately.
 - Use plain ASCII hyphens in prose.
 - Do not fabricate quotations, citations, page numbers, results, or references.
-${part.name === "prerequisites" || part.name === "glossary" ? referenceShelf : ""}
+${part.name.startsWith("prerequisites-") || part.name === "glossary" ? referenceShelf : ""}
 ${previousProblems.length ? `A previous draft failed quality checks: ${previousProblems.join("; ")}. Rewrite the entire tutorial and fix every issue.` : ""}
 
 SOURCE PDF TEXT
@@ -267,12 +281,12 @@ export async function generatePaperTutorial({ paper, pdfPath }) {
   }
   await Promise.all(Array.from({ length: partConcurrency }, () => authorPartWorker()));
   const tutorial = `# ${paper.title} - Complete Tutorial\n\n${authoredParts.join("\n\n")}\n`;
-  const problems = qualityProblems(tutorial);
+  const problems = qualityProblems(tutorial, paper.id);
   if (problems.length) throw new Error(`${paper.id}: assembled tutorial failed quality checks: ${problems.join("; ")}`);
   return tutorial;
 }
 
 export function verifyDetailedTutorial(text, label = "tutorial") {
-  const problems = qualityProblems(text);
+  const problems = qualityProblems(text, /^\d{4}\.\d{4,5}$/.test(label) ? label : undefined);
   if (problems.length) throw new Error(`${label}: ${problems.join("; ")}`);
 }

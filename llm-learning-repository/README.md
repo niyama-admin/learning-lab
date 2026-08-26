@@ -18,7 +18,7 @@ The [weekly knowledge workflow](references/weekly-curation-workflow.md) runs eve
 
 ## Tutorial quality standard
 
-Every completed paper guide is intended to replace a first reading of the source at three levels: a self-contained intuitive explanation, an implementation-oriented practitioner treatment, and a formal researcher treatment. Guides include paper-specific findings and limitations, diagrams, equations where needed, and an appendix that teaches every prerequisite with a worked example and vetted reference. `build-guides.mjs` preserves enriched tutorials unless explicitly invoked with `--force-tutorials`.
+Every completed paper guide is intended to replace a first reading of the source at three levels: a self-contained intuitive explanation, an implementation-oriented practitioner treatment, and a formal researcher treatment. Guides include paper-specific findings and limitations, diagrams, equations where needed, and an appendix that teaches at least six paper-specific prerequisites with worked examples and references restricted to the vetted shelf. `build-guides.mjs` preserves enriched tutorials unless explicitly invoked with `--force-tutorials`.
 
 PDFs live in `papers/`; metadata and canonical URLs live in [manifest.csv](manifest.csv). Re-download deterministically with `node download-papers.mjs`.
 
