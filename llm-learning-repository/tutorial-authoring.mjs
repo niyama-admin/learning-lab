@@ -58,6 +58,38 @@ function outputText(json) {
     .filter(item => item.type === "output_text").map(item => item.text).join("\n");
 }
 
+let resolvedModel;
+const defaultModelCandidates = [
+  "openai-gpt-oss-120b",
+  "llama3.3-70b-instruct",
+  "alibaba-qwen3-32b",
+  "openai-gpt-oss-20b"
+];
+
+async function createModelResponse(input) {
+  const configured = process.env.DIGITALOCEAN_MODEL_ID?.trim();
+  const candidates = resolvedModel ? [resolvedModel] : configured ? [configured] : defaultModelCandidates;
+  const failures = [];
+  for (const model of candidates) {
+    const response = await fetch("https://inference.do-ai.run/v1/responses", {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${process.env.MODEL_ACCESS_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ model, input, max_output_tokens: 9_000, temperature: 0.15, stream: false })
+    });
+    if (response.ok) {
+      resolvedModel = model;
+      console.log(`DigitalOcean model: ${model}`);
+      return response.json();
+    }
+    const detail = (await response.text()).slice(0, 500);
+    failures.push(`${model}: HTTP ${response.status} ${detail}`);
+    const unavailable = response.status === 403 && /not available|subscription tier/i.test(detail);
+    if (configured || !unavailable) throw new Error(`DigitalOcean inference failed: ${failures.join(" | ")}`);
+    console.warn(`${model} is unavailable for this tier; trying the next serverless model`);
+  }
+  throw new Error(`No candidate DigitalOcean serverless model is available: ${failures.join(" | ")}`);
+}
+
 function qualityProblems(text) {
   const problems = [];
   if (!text || text.length < 14_000) problems.push(`only ${text?.length ?? 0} characters; minimum is 14,000`);
@@ -119,19 +151,7 @@ export async function generatePaperTutorial({ paper, pdfPath }) {
   const grounding = await extractGroundingText(pdfPath);
   let problems = [];
   for (let attempt = 1; attempt <= 2; attempt++) {
-    const response = await fetch("https://inference.do-ai.run/v1/responses", {
-      method: "POST",
-      headers: { "Authorization": `Bearer ${process.env.MODEL_ACCESS_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: process.env.DIGITALOCEAN_MODEL_ID || "openai-gpt-5.5",
-        input: promptFor(paper, grounding, problems),
-        max_output_tokens: 10_000,
-        temperature: 0.15,
-        stream: false
-      })
-    });
-    if (!response.ok) throw new Error(`DigitalOcean inference HTTP ${response.status}: ${(await response.text()).slice(0, 500)}`);
-    const text = outputText(await response.json())?.trim();
+    const text = outputText(await createModelResponse(promptFor(paper, grounding, problems)))?.trim();
     problems = qualityProblems(text);
     if (!problems.length) return `${text}\n`;
     console.warn(`${paper.id}: attempt ${attempt} failed: ${problems.join("; ")}`);
