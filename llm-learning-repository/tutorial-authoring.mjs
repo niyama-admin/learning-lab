@@ -99,7 +99,7 @@ async function createModelResponse(input) {
 
 function qualityProblems(text) {
   const problems = [];
-  if (!text || text.length < 14_000) problems.push(`only ${text?.length ?? 0} characters; minimum is 14,000`);
+  if (!text || text.length < 35_000) problems.push(`only ${text?.length ?? 0} characters; minimum is 35,000`);
   for (const heading of [
     "## Paper at a glance", "## Concept map", "## Tutorial 1 - Intuitive understanding",
     "## Tutorial 2 - Practitioner understanding", "## Tutorial 3 - Researcher understanding",
@@ -111,33 +111,75 @@ function qualityProblems(text) {
   return problems;
 }
 
-function promptFor(paper, grounding, previousProblems = []) {
-  return `You are authoring a rigorous, self-contained tutorial that can replace a first reading of the supplied research paper at three levels of difficulty. This is not a reading guide, outline, or list of instructions. Explain the paper itself: its problem, prior context, method, mechanisms, equations, experiments, quantitative findings, limitations, and implications. Every paper-specific claim must be supported by the supplied PDF text. Explicitly say when the extracted text does not establish a detail.
+const parts = [
+  {
+    name: "intuition",
+    minimumCharacters: 7_000,
+    headings: ["## Paper at a glance", "## Concept map", "## Tutorial 1 - Intuitive understanding"],
+    instructions: `Write only these sections, using the exact headings shown:
+## Paper at a glance
+Give the research question, central contribution, method, headline findings, and scope in a compact table. Quantitative values must match the paper.
+## Concept map
+Give a valid Mermaid diagram showing the paper's causal or computational flow, then explain every node and connection in prose.
+## Tutorial 1 - Intuitive understanding
+Write 900-1,300 words for an intelligent reader without computer-science training. Use a running analogy, explain every essential term, walk through the method step by step, report the actual evidence and findings, discuss limitations and what the work does not prove, and end with a teach-back recap.`
+  },
+  {
+    name: "practitioner",
+    minimumCharacters: 9_000,
+    headings: ["## Tutorial 2 - Practitioner understanding"],
+    instructions: `Write only this section with the exact heading:
+## Tutorial 2 - Practitioner understanding
+Write 1,600-2,400 words for a computer-science practitioner. Explain architecture and data flow, algorithms, inputs and outputs, implementation choices, evaluation design, key tables and quantitative findings, operational trade-offs, failure modes, and a concrete reproduction or adoption plan. Translate every important equation into words and define symbols. Include at least one implementation-oriented Mermaid diagram or pseudocode block. This must teach the implementation, not merely recommend that the reader inspect the paper.`
+  },
+  {
+    name: "researcher",
+    minimumCharacters: 11_000,
+    headings: ["## Tutorial 3 - Researcher understanding"],
+    instructions: `Write only this section with the exact heading:
+## Tutorial 3 - Researcher understanding
+Write 2,200-3,200 words. Reconstruct the formal problem, assumptions, objective functions and equations, experimental design, baselines, metrics, ablations, quantitative results, uncertainty, limitations and threats to validity, relationship to prior work, and research extensions. Distinguish evidence in the paper from your synthesis. Include detailed proposed replication and ablation studies. Define all notation and reason carefully about what the experiments do and do not establish.`
+  },
+  {
+    name: "prerequisites",
+    minimumCharacters: 8_000,
+    headings: ["## Appendix - Prerequisites", "## Paper-specific glossary", "## Source boundaries and further reading"],
+    instructions: `Write only these sections, using the exact headings shown:
+## Appendix - Prerequisites
+Identify every prerequisite actually needed to understand this specific paper. For each, use a heading of the form "### Prerequisite N - Concept" and provide an intuitive explanation, formal definition or equation where relevant, a small worked example, exactly how the paper uses it, common misconceptions, and 1-3 references from the vetted shelf. At least three prerequisites are required; complex papers should have more. Do not merely list references.
+## Paper-specific glossary
+Define all symbols, acronyms, datasets, benchmarks, protocols, and specialized terms needed to understand the tutorial.
+## Source boundaries and further reading
+State extraction limits, distinguish the original paper from prerequisite references, and link the arXiv abstract.`
+  }
+];
+
+function partProblems(text, part) {
+  const problems = [];
+  if (!text || text.length < part.minimumCharacters) {
+    problems.push(`only ${text?.length ?? 0} characters; minimum is ${part.minimumCharacters}`);
+  }
+  for (const heading of part.headings) if (!text?.includes(heading)) problems.push(`missing heading: ${heading}`);
+  if (part.name === "intuition" && !text?.includes("```mermaid")) problems.push("missing Mermaid concept map");
+  if (part.name === "practitioner" && !text?.includes("```")) problems.push("missing implementation diagram or pseudocode");
+  if (part.name === "researcher" && (text?.match(/limitations?|threats? to validity/gi) ?? []).length < 2) {
+    problems.push("insufficient limitations and validity analysis");
+  }
+  if (part.name === "prerequisites" && (text?.match(/### Prerequisite /g) ?? []).length < 3) {
+    problems.push("fewer than three explained prerequisites");
+  }
+  return problems;
+}
+
+function promptForPart(paper, grounding, part, previousProblems = []) {
+  return `You are authoring one chapter of a rigorous, self-contained tutorial that can replace a first reading of the supplied research paper. This is not a reading guide, outline, or list of instructions. Explain the paper itself. Every paper-specific claim must be supported by the supplied PDF text. Explicitly say when the extracted text does not establish a detail. Do not add a document title or wrap the answer in an outer code fence.
 
 Paper: ${paper.title}
 Authors: ${paper.authors}
 arXiv ID: ${paper.id}
 PDF extraction: ${grounding.selectedPages} of ${grounding.pageCount} pages${grounding.truncated ? " selected by section relevance because the paper exceeded the context budget" : " included"}.
 
-Required output, in Markdown, with these exact headings:
-
-# ${paper.title} - Complete Tutorial
-## Paper at a glance
-Give the research question, central contribution, method, headline findings, and scope in a compact table. Quantitative values must match the paper.
-## Concept map
-Give a valid Mermaid diagram showing the paper's causal or computational flow, then explain it in prose.
-## Tutorial 1 - Intuitive understanding
-Write 900-1,300 words for an intelligent reader without computer-science training. Use a running analogy, explain all essential terms, walk through the method step by step, report the actual evidence and findings, and discuss what the work does not prove. End with a teach-back recap. Do not tell the reader merely to inspect the paper.
-## Tutorial 2 - Practitioner understanding
-Write 1,600-2,400 words for a computer-science practitioner. Explain architecture/data flow, algorithms, inputs/outputs, implementation choices, evaluation design, key tables or findings, operational trade-offs, failure modes, and a concrete reproduction or adoption plan. Translate every important equation into words and define symbols. Include at least one implementation-oriented Mermaid diagram or pseudocode block.
-## Tutorial 3 - Researcher understanding
-Write 2,200-3,200 words. Reconstruct the formal problem, assumptions, objective functions and equations, experimental design, baselines, metrics, ablations, quantitative results, uncertainty, threats to validity, relationship to prior work, and research extensions. Distinguish evidence in the paper from your synthesis. Include proposed replication and ablation studies.
-## Appendix - Prerequisites
-Identify every prerequisite actually needed for this paper. For each, use a heading of the form "### Prerequisite N - Concept" and provide: an intuitive explanation, formal definition or equation where relevant, a small worked example, exactly how the paper uses it, common misconceptions, and 1-3 references from the vetted shelf below. At least three prerequisites are required; complex papers should have more.
-## Paper-specific glossary
-Define all symbols, acronyms, datasets, benchmarks, protocols, and specialized terms needed to understand the tutorial.
-## Source boundaries and further reading
-State extraction limits, distinguish the original paper from prerequisite references, and link the arXiv abstract as https://arxiv.org/abs/${paper.id}.
+${part.instructions}
 
 Writing requirements:
 - Be explanatory and complete, not skeletal. Do not include generic instructions such as "read the methods" in place of explanation.
@@ -145,7 +187,7 @@ Writing requirements:
 - Use equations when they materially explain the method; define every symbol immediately.
 - Use plain ASCII hyphens in prose.
 - Do not fabricate quotations, citations, page numbers, results, or references.
-${referenceShelf}
+${part.name === "prerequisites" ? referenceShelf : ""}
 ${previousProblems.length ? `A previous draft failed quality checks: ${previousProblems.join("; ")}. Rewrite the entire tutorial and fix every issue.` : ""}
 
 SOURCE PDF TEXT
@@ -156,14 +198,23 @@ ${grounding.text}`;
 export async function generatePaperTutorial({ paper, pdfPath }) {
   if (!process.env.MODEL_ACCESS_KEY) throw new Error("MODEL_ACCESS_KEY is required for full-paper tutorial authoring");
   const grounding = await extractGroundingText(pdfPath);
-  let problems = [];
-  for (let attempt = 1; attempt <= 2; attempt++) {
-    const text = outputText(await createModelResponse(promptFor(paper, grounding, problems)))?.trim();
-    problems = qualityProblems(text);
-    if (!problems.length) return `${text}\n`;
-    console.warn(`${paper.id}: attempt ${attempt} failed: ${problems.join("; ")}`);
-  }
-  throw new Error(`${paper.id}: tutorial failed quality checks after two attempts: ${problems.join("; ")}`);
+  const authoredParts = await Promise.all(parts.map(async part => {
+    let problems = [];
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      const text = outputText(await createModelResponse(promptForPart(paper, grounding, part, problems)))?.trim();
+      problems = partProblems(text, part);
+      if (!problems.length) {
+        console.log(`${paper.id}/${part.name}: accepted ${text.length} characters`);
+        return text;
+      }
+      console.warn(`${paper.id}/${part.name}: attempt ${attempt} failed: ${problems.join("; ")}`);
+    }
+    throw new Error(`${paper.id}/${part.name}: failed quality checks after two attempts: ${problems.join("; ")}`);
+  }));
+  const tutorial = `# ${paper.title} - Complete Tutorial\n\n${authoredParts.join("\n\n")}\n`;
+  const problems = qualityProblems(tutorial);
+  if (problems.length) throw new Error(`${paper.id}: assembled tutorial failed quality checks: ${problems.join("; ")}`);
+  return tutorial;
 }
 
 export function verifyDetailedTutorial(text, label = "tutorial") {
