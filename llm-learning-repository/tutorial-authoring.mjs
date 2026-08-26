@@ -99,7 +99,7 @@ async function createModelResponse(input) {
 
 function qualityProblems(text, paperId) {
   const problems = [];
-  if (!text || text.length < 35_000) problems.push(`only ${text?.length ?? 0} characters; minimum is 35,000`);
+  if (!text || text.length < 45_000) problems.push(`only ${text?.length ?? 0} characters; minimum is 45,000`);
   for (const heading of [
     "## Paper at a glance", "## Concept map", "## Tutorial 1 - Intuitive understanding",
     "## Tutorial 2 - Practitioner understanding", "## Tutorial 3 - Researcher understanding",
@@ -180,22 +180,23 @@ Reconstruct the experimental design, datasets, baselines, metrics, ablations, qu
 ### Validity, replication, ablations, and extensions
 Analyze limitations, threats to internal and external validity, alternative explanations, and what the evidence does not establish. Then provide detailed replication, ablation, and research-extension studies with hypotheses, controls, measurements, acceptance or rejection criteria, and possible interpretations. Clearly distinguish critiques implied by the paper from your synthesis.`
   },
-  {
-    name: "prerequisites-foundational",
-    minimumCharacters: 4_500,
-    headings: ["## Appendix - Prerequisites"],
-    instructions: `Write only this section with the exact heading:
-## Appendix - Prerequisites
-Teach exactly three foundational prerequisites needed before approaching this paper, numbered 1 through 3 with headings of the form "### Prerequisite N - Concept". Choose enabling concepts such as linear algebra, probability, optimization, statistics, sequence modeling, distributed systems, or protocols - not the paper's central contribution itself. For each provide an intuitive explanation, formal definition or equation where relevant, a fully worked small example, exactly how the paper uses it, common misconceptions, and a final bold "References:" line containing 1-3 exact entries from the vetted shelf. Do not merely list references.`
-  },
-  {
-    name: "prerequisites-applied",
-    minimumCharacters: 4_500,
-    headings: ["### Additional prerequisites"],
-    instructions: `Write only this continuation of the prerequisite appendix with the exact first heading:
-### Additional prerequisites
-Teach exactly three additional prerequisites needed to understand this paper, numbered 4 through 6 with headings of the form "### Prerequisite N - Concept". Do not repeat the likely foundational concepts (basic linear algebra, probability, and optimization); choose the next layer of domain, evaluation, systems, or methodological knowledge. Do not use the paper's novel contribution as its own prerequisite. For each provide an intuitive explanation, formal definition or equation where relevant, a fully worked small example, exactly how the paper uses it, common misconceptions, and a final bold "References:" line containing 1-3 exact entries from the vetted shelf.`
-  },
+  ...[
+    [1, "mathematical representations such as vectors, matrices, probability, or geometry"],
+    [2, "learning, optimization, loss functions, or the pre-existing mechanism on which the contribution builds"],
+    [3, "the paper's application domain, task formulation, data representation, or historical modeling context"],
+    [4, "evaluation metrics, statistical comparison, uncertainty, experimental design, or causal interpretation"],
+    [5, "implementation, algorithms, computational complexity, distributed systems, repositories, or protocols"],
+    [6, "validity, reliability, security, governance, human factors, or operational risk"]
+  ].map(([number, lens]) => ({
+    name: `prerequisite-${number}`,
+    prerequisiteNumber: number,
+    minimumCharacters: 2_000,
+    headings: number === 1 ? ["## Appendix - Prerequisites"] : [],
+    instructions: `Write only prerequisite ${number}. ${number === 1 ? "Begin with the exact heading ## Appendix - Prerequisites, followed by" : "Begin with"} a heading of the form "### Prerequisite ${number} - Specific concept name".
+Choose one prerequisite from this distinct lens: ${lens}. The other five appendix entries cover the other five lenses, so do not drift into them or repeat them. If this lens truly does not apply, choose the nearest necessary non-overlapping prerequisite and explain why it is needed. Do not use the paper's novel contribution as its own prerequisite.
+
+Make this a self-contained mini-tutorial of roughly 450-700 words with all of these labeled subsections: "Intuition", "Formal view", "Worked example", "How this paper uses it", "Common misconceptions", and "References". The worked example must show intermediate steps, not merely state an answer. End with a bold "References:" line containing 1-3 exact entries from the vetted shelf. Do not cite anything outside the shelf and do not invent page or chapter numbers.`
+  })),
   {
     name: "glossary",
     minimumCharacters: 2_000,
@@ -221,11 +222,11 @@ function partProblems(text, part) {
   if (part.name === "researcher-validity" && (text?.match(/limitations?|threats? to validity/gi) ?? []).length < 2) {
     problems.push("insufficient limitations and validity analysis");
   }
-  if (part.name.startsWith("prerequisites-") && (text?.match(/### Prerequisite /g) ?? []).length < 3) {
-    problems.push("fewer than three explained prerequisites");
+  if (part.name.startsWith("prerequisite-") && !text?.includes(`### Prerequisite ${part.prerequisiteNumber} -`)) {
+    problems.push(`missing prerequisite ${part.prerequisiteNumber} heading`);
   }
-  if (part.name.startsWith("prerequisites-") && (text?.match(/\*\*References:\*\*/g) ?? []).length < 3) {
-    problems.push("fewer than three prerequisite reference blocks");
+  if (part.name.startsWith("prerequisite-") && (text?.match(/\*\*References:\*\*/g) ?? []).length < 1) {
+    problems.push("missing prerequisite reference block");
   }
   return problems;
 }
@@ -247,7 +248,7 @@ Writing requirements:
 - Use equations when they materially explain the method; define every symbol immediately.
 - Use plain ASCII hyphens in prose.
 - Do not fabricate quotations, citations, page numbers, results, or references.
-${part.name.startsWith("prerequisites-") || part.name === "glossary" ? referenceShelf : ""}
+${part.name.startsWith("prerequisite-") || part.name === "glossary" ? referenceShelf : ""}
 ${previousProblems.length ? `A previous draft failed quality checks: ${previousProblems.join("; ")}. Rewrite the entire tutorial and fix every issue.` : ""}
 
 SOURCE PDF TEXT
