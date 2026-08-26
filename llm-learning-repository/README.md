@@ -12,6 +12,10 @@ A methodical path from non-technical intuition to practitioner competence and re
 
 Before each stage, consult the [prerequisite map](references/prerequisite-map.md). For coding agents, use the [repository benchmark field guide](references/repository-benchmark-field-guide.md); for agent and customer-facing communication, use [protocols and channels](references/protocols-and-channels.md).
 
+## Weekly additions
+
+The [weekly knowledge workflow](references/weekly-curation-workflow.md) runs every Saturday, selects up to one new arXiv paper for each curriculum category, creates a Monday-Friday study plan with three-level tutorials, downloads and verifies the PDFs, and opens a review PR. Browse accepted additions in [weekly/](weekly/README.md).
+
 PDFs live in `papers/`; metadata and canonical URLs live in [manifest.csv](manifest.csv). Re-download deterministically with `node download-papers.mjs`.
 
 ## Curriculum
