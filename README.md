@@ -10,6 +10,7 @@
 | [Themes](themes/) | Reusable guidance for agentic engineering, analytics, context, orchestration, RAG, channels, and memory |
 | [LLM learning repository](llm-learning-repository/README.md) | Ordered papers, local PDFs, three-level tutorials, a research roadmap, and weekly arXiv curation |
 | [Compute architectures](compute/README.md) | CPU, memory, x86-64, Arm, NVIDIA, AMD, and Intel GPU specifications and three-level tutorials |
+| [LLM market reference](llms/market-reference/README.md) | Dated model catalog, benchmark map, business workload fit, and outcome-based economics |
 
 ## Notebook areas
 
