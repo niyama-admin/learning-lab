@@ -9,6 +9,7 @@
 | [Architecture evolution](architecture-evolution/README.md) | Evidence-led architecture decisions, quality attributes, trade-offs, and an interactive blueprint |
 | [Themes](themes/) | Reusable guidance for agentic engineering, analytics, context, orchestration, RAG, channels, and memory |
 | [LLM learning repository](llm-learning-repository/README.md) | Ordered papers, local PDFs, three-level tutorials, a research roadmap, and weekly arXiv curation |
+| [Compute architectures](compute/README.md) | CPU, memory, x86-64, Arm, NVIDIA, AMD, and Intel GPU specifications and three-level tutorials |
 
 ## Notebook areas
 
@@ -34,6 +35,7 @@ flowchart TB
   CORE --> AE[Architecture evolution]
   CORE --> TH[Themes]
   CORE --> LR[LLM learning repository]
+  CORE --> COMPUTE[Compute architectures]
   AREAS --> LLM[LLMs]
   AREAS --> AG[Agents]
   AREAS --> SYS[Architecture and distributed systems]
