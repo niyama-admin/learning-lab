@@ -1,0 +1,17 @@
+category,benchmark,unit,primary_metric,good_for,key_limitation,primary_source
+coding,SWE-bench Verified,repository issue,test-verified resolution rate,repository issue resolution,"Public contamination; scaffold budget and dataset version matter",https://www.swebench.com/
+coding,Terminal-Bench,terminal task,resolution rate plus tokens and cost,long-horizon terminal agents,"Environment tool and internet policy matter",https://www.frontierbench.ai/
+coding,LiveCodeBench,coding problem,pass rate,recent contamination-resistant code reasoning,"Not repository engineering",https://livecodebench.github.io/
+coding,HumanEval,function problem,pass@k,cheap historical smoke test,"Narrow saturated and contaminated",https://github.com/openai/human-eval
+agents,tau-bench,interactive domain case,pass^k/tool-policy success,tool-agent-user interaction,"Simulated users and limited domains",https://taubench.com/
+agents,Berkeley Function Calling Leaderboard,function-call case,accuracy/function-call metrics,tool selection and arguments,"Syntax is not end-to-end outcome",https://gorilla.cs.berkeley.edu/leaderboard.html
+business,CRMArena-Pro,CRM workflow,task completion/business skill,CRM service sales and CPQ,"Platform-specific; research-use terms",https://github.com/SalesforceAIResearch/CRMArena
+business,WorkArena++,enterprise browser workflow,task success,compositional knowledge work,"ServiceNow-specific environment",https://github.com/ServiceNow/WorkArena
+business,GDPval,professional deliverable,expert preference/rubric,realistic economically valuable work,"Provider-originated; public subset; not operating ROI",https://evals.openai.com/
+documents,DocVQA,document question,answer accuracy/ANLS,document visual understanding,"Does not cover permissions review and workflow",https://www.docvqa.org/
+finance,FinanceBench,financial document question,answer accuracy,filing retrieval and reasoning,"Needs current private documents calculations and citations",https://arxiv.org/abs/2311.11944
+legal,LegalBench,legal reasoning task,task-specific aggregate,legal reasoning research,"No current jurisdiction matter context or professional approval",https://github.com/HazyResearch/legalbench
+image,T2I-CompBench,text-to-image prompt,compositional alignment,image prompt following,"Brand rights safety and human acceptance remain private",https://github.com/Karine-Huang/T2I-CompBench
+video,VBench 2.0,generated video,dimension suite/video quality,temporal and intrinsic faithfulness,"Automated metrics do not replace creative approval",https://github.com/Vchitect/VBench
+aec,aec-bench,engineering agent task,reward/task success,AEC calculation and agent workflows,"Emerging benchmark; inspect standards provenance and grader",https://www.aecbench.com/
+aec,AECBench,AEC knowledge/reasoning task,task and judge metrics,AEC domain capability,"Knowledge score does not validate a safe buildable design",https://github.com/ArchiAI-LAB/AECBench
