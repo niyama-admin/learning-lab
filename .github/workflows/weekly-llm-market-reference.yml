@@ -1,0 +1,69 @@
+name: Weekly LLM market reference update
+
+on:
+  schedule:
+    # 10:00 Asia/Kolkata every Saturday (GitHub cron is UTC).
+    - cron: "30 4 * * 6"
+  workflow_dispatch:
+    inputs:
+      snapshot_date:
+        description: "Optional UTC date (YYYY-MM-DD); defaults to today"
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: weekly-llm-market-reference
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 90
+    env:
+      MODEL_ACCESS_KEY: ${{ secrets.MODEL_ACCESS_KEY }}
+      DIGITALOCEAN_MODEL_ID: ${{ vars.DIGITALOCEAN_MODEL_ID }}
+      DIGITALOCEAN_INPUT_USD_PER_MILLION: ${{ vars.DIGITALOCEAN_INPUT_USD_PER_MILLION }}
+      DIGITALOCEAN_CACHED_INPUT_USD_PER_MILLION: ${{ vars.DIGITALOCEAN_CACHED_INPUT_USD_PER_MILLION }}
+      DIGITALOCEAN_OUTPUT_USD_PER_MILLION: ${{ vars.DIGITALOCEAN_OUTPUT_USD_PER_MILLION }}
+      MARKET_REFRESH_MAX_CHANGES: "20"
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Compare official model catalogs
+        run: node llms/market-reference/weekly-market-update.mjs ${{ inputs.snapshot_date && format('--date={0}', inputs.snapshot_date) || '' }}
+
+      - name: Validate reference and updater
+        run: |
+          node llms/market-reference/verify-reference.mjs
+          node llms/market-reference/weekly-market-update.mjs --verify
+
+      - name: Open or refresh the market review PR
+        uses: peter-evans/create-pull-request@v8.1.1
+        with:
+          add-paths: |
+            llms/market-reference/data/models.csv
+            llms/market-reference/weekly
+          branch: automation/weekly-llm-market-reference
+          delete-branch: true
+          commit-message: weekly-llm-market-reference-update
+          title: "Weekly LLM market reference update"
+          body: |
+            Automated Saturday comparison of official model catalogs with the dated LLM market inventory.
+
+            - Uses DigitalOcean Serverless Inference with the production `MODEL_ACCESS_KEY` only for structured change extraction.
+            - Accepts only evidence-backed changes from allow-listed first-party sources.
+            - Records exact evidence, retrieval timestamps, and source SHA-256 fingerprints.
+            - Updates the model CSV and adds a dated reviewer report.
+            - Never auto-merges; a human must verify lifecycle, license, modality, context, pricing, and commercial qualifications.
+
+            A catalog change is not a production recommendation. Workload acceptance and outcome economics must be reevaluated separately.
+          labels: documentation, automated
