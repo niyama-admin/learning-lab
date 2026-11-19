@@ -1,292 +1,505 @@
-# LoRA: Low-Rank Adaptation of Large Language Models - Complete Tutorial
+---
+format: v2
+arxiv: 2106.09685
+---
 
-> **Paper:** Hu et al. - arXiv:2106.09685 - [abstract](https://arxiv.org/abs/2106.09685) - [local PDF](../../papers/2106.09685.pdf)
+# LoRA: Low-Rank Adaptation of Large Language Models
+
+> **Paper:** Hu, Shen, Wallis, Allen-Zhu, Li, Wang, Wang and Chen (Microsoft Corporation), 2021 (arXiv v2, 16 October 2021) - [arXiv abstract](https://arxiv.org/abs/2106.09685) - [local PDF](../../papers/2106.09685.pdf)
 >
-> **How to use this chapter:** Tutorial 1 builds intuition without assuming computer science. Tutorial 2 is an implementation and evaluation guide. Tutorial 3 reconstructs the research claim and shows how to challenge it. The appendix teaches the prerequisites from established references.
+> **Short name:** LoRA. Section, table and figure numbers follow the arXiv HTML rendering of v2 (Tables 1-18, Figures 1-8, Appendices A-H). The arXiv text does not name a venue; this guide's own knowledge is that the paper appeared at ICLR (International Conference on Learning Representations) 2022, so it is peer reviewed, but nothing below depends on that.
 
-## Paper at a glance
+## Read this first
 
-| Question | Paper-specific answer |
-|---|---|
-| Research question | Can large pretrained models be adapted by training a tiny low-rank update instead of changing every weight? |
-| What came before | Full fine-tuning stores and trains a complete parameter copy per task; adapter modules can add inference latency or architectural complexity. |
-| Central contribution | LoRA freezes pretrained weights and injects trainable low-rank matrices into selected linear transformations. |
-| Method | For a frozen weight W0, learn Delta W = BA where rank r is much smaller than the input and output dimensions. During inference BA can be merged into W0, adding no extra layer latency. |
-| Evidence | On GPT-3 175B, LoRA reduces trainable parameters by roughly 10,000 times and GPU memory by about three times relative to full fine-tuning while matching or exceeding strong adaptation baselines across evaluated NLP tasks. |
-| Boundaries | Low intrinsic update rank is an empirical hypothesis, not a guarantee. Rank, target modules, scaling, optimizer, and data determine quality; merging many tenant adapters and serving them efficiently are separate systems problems. |
+**The claim in one sentence.** Instead of changing every number inside a huge model to teach it a task, freeze the model and learn a pair of thin matrices per weight matrix whose product is added to the frozen weights; on GPT-3 (Generative Pre-trained Transformer 3) 175B this stores about ten thousand times fewer numbers per task, matches full fine-tuning on the paper's benchmarks, and can be folded into the original weights afterwards so inference is no slower.
 
-The paper mattered because it changed the unit of discussion from a vague promise about language models to a concrete mechanism and evaluation. Its claim is narrower than “AI understands”: it says that under the stated data, model, prompt, and measurement conditions, the proposed intervention changes specified outcomes. Keep that sentence in view throughout all three tutorials.
+**Who this is for.** Anyone deciding how to make a model do a specific job: change its weights (fine-tuning, LoRA), bolt on small extra layers (adapters), or change only what it reads (prompts, retrieved context, memory). It is the first guide in this stage where the tool is a training method, which makes it the place to ask when training is worth it at all.
 
-## Concept map
+**Afterwards you will be able to** count the trainable numbers for a real GPT-3 matrix at ranks 1, 4 and 8; trace a forward pass and the merge step with actual numbers; say which of the paper's differences are real and which sit inside the noise; and judge when a team that cannot retrain should use context instead.
+
+**Reading time.** About 50 minutes; Tutorial 1 alone is about 20. **Have read first:** [the Transformer](../01-foundations/01-transformer.md) (the query, key, value and output matrices LoRA modifies) and [InstructGPT](./08-instructgpt.md) (full fine-tuning at scale, the cost LoRA attacks). Useful: [GPT-3](../01-foundations/03-gpt3.md). The later track goes the other way, changing context and not weights: [Agentic Context Engineering](../06-agent-systems/31-agentic-context-engineering.md). Maths help: [glossary](../../references/glossary.md), [math bridge](../../references/math-bridge.md).
+
+**The one thing most people get wrong.** LoRA is not a way to give a model instructions or context. It changes the model: a different set of numbers ends up in the weights, so you must own, run and version a model you can train. Someone who can only send text to a hosted model cannot use it. Also, "10,000 times fewer" is a checkpoint-size figure for one GPT-3 setting (query and value matrices, rank 4), not a promise for every model, nor a statement about training memory.
+
+## The paper in one worked example
+
+The paper has no single prompt-and-answer example, so this guide builds one from the paper's numbers and labels what is constructed. Part A uses real shapes and counts; Part B is a toy small enough to check by hand (constructed by this guide); Part C is the merge.
+
+### Part A - one real weight matrix, with shapes and counts
+
+GPT-3 175B has 96 layers and a model width d_model of 12,288 (Introduction: "as high as 12,288"; Section 7.1: "96 layers"). Each layer's self-attention has four square matrices, query (W_q), key (W_k), value (W_v) and output (W_o); Section 4.2 treats W_q, W_k, W_v each as one d_model x d_model matrix.
+
+- **One frozen matrix W_0:** 12,288 x 12,288 = **150,994,944** numbers (guide's arithmetic).
+- **LoRA's update** is B A (Section 4.1): B is d x r = 12,288 x r, A is r x k = r x 12,288. B A has the full 12,288 x 12,288 shape but rank at most r.
+- **Trainable numbers per matrix** = r x (12,288 + 12,288) = r x 24,576 (guide's arithmetic).
+
+| Rank r | Shape of B | Shape of A | Trainable numbers | Full update trains | Ratio | Share of one matrix |
+|---|---|---|---|---|---|---|
+| 1 | 12,288 x 1 | 1 x 12,288 | 24,576 | 150,994,944 | 6,144 times fewer | 0.0163 percent |
+| 4 | 12,288 x 4 | 4 x 12,288 | 98,304 | 150,994,944 | 1,536 times fewer | 0.0651 percent |
+| 8 | 12,288 x 8 | 8 x 12,288 | 196,608 | 150,994,944 | 768 times fewer | 0.130 percent |
+
+Now the whole model with the paper's default of adapting only W_q and W_v (Section 4.2: "in most experiments"), 2 x 96 = 192 matrices:
+
+| Rank r | LoRA numbers in the model | Paper reports | FP16 size (2 bytes each) | Share of 175 billion |
+|---|---|---|---|---|
+| 1 | 192 x 24,576 = 4,718,592 | 4.7M (Tables 4, 15) | about 9.4 MB | 0.0027 percent |
+| 4 | 192 x 98,304 = 18,874,368 | "18M" (Section 7.1); 18.8M (Table 15) | about 37.7 MB | 0.0108 percent |
+| 8 | 192 x 196,608 = 37,748,736 | 37.7M (Tables 4, 15) | about 75.5 MB | 0.0216 percent |
+
+The paper says that at r = 4 on W_q and W_v "the checkpoint size is reduced by roughly 10,000 times (from 350GB to 35MB)" (Section 4.2) and that trainable parameters can be "as small as 0.01%" of the model (Section 2). Guide's check: 0.0108 percent fits; 350 GB over 35 MB is exactly 10,000, but 18.87 million numbers at two bytes is 37.7 MB, so "35MB" is rounded and the true ratio is about 9,300. Right order of magnitude; do not quote it to three digits.
+
+### Part B - a toy forward pass (constructed by this guide)
+
+Shrink to d = k = 3, r = 1, with alpha / r = 1 (the scaling constant of Section 4.1). All numbers are invented.
+
+- W_0 = [[1, 0, 2], [0, 1, 1], [3, 1, 0]]; input x = [1, 2, 3]. B = [[1], [0], [2]] (3 x 1) and A = [[1, -1, 0]] (1 x 3), shown after some training (at the start B is all zeros, Section 4.1, so the model begins unchanged).
+- **Frozen path:** W_0 x = [1 + 0 + 6, 0 + 2 + 3, 3 + 2 + 0] = [7, 5, 5].
+- **Low-rank path:** A x = 1 - 2 + 0 = -1 (one number, since r = 1); B (A x) = [-1, 0, -2].
+- **Sum (Equation 3):** h = W_0 x + B A x = **[6, 5, 3]**.
+- **Count:** a full update trains 3 x 3 = 9 numbers, the pair 3 + 3 = 6. The pair grows as 2 x d and the matrix as d x d, so the saving is small here and huge at d = 12,288.
+
+### Part C - the merge
+
+Multiply once: B A = [[1, -1, 0], [0, 0, 0], [2, -2, 0]]. Then W = W_0 + B A = [[2, -1, 2], [0, 1, 1], [5, -1, 0]], and W x = [2 - 2 + 6, 0 + 2 + 3, 5 - 2 + 0] = **[6, 5, 3]**, identical to Part B. Serve W and the extra path is gone (Section 4.1, "No Additional Inference Latency"). To change task, subtract B A and add B' A'.
 
 ```mermaid
 flowchart LR
-  A["frozen weight W0"] --> B["input x"]
-  B --> C["low-rank A then B"]
-  C --> D["scaled update"]
-  D --> E["combined output"]
-  E -. feedback and audit .-> A
+    X["input x (length d)"] -->|"copy 1"| W0["frozen W_0 (d x k), no gradient"]
+    X -->|"copy 2"| A["A (r x k), trained, random start"]
+    A -->|"r numbers"| B["B (d x r), trained, zero start"]
+    W0 -->|"W_0 x"| S(("sum"))
+    B -->|"B A x, times alpha / r"| S
+    S -->|"h = W_0 x + B A x"| H["output h (length d)"]
+    B -.->|"after training: W = W_0 + B A, then drop A and B"| W0
 ```
 
-Read the arrows as dependencies, not decoration. **frozen weight W0** supplies the starting information. **input x** transforms or selects it. **low-rank A then B** is the central learned or experimental mechanism. **scaled update** converts internal state into a task-facing result. **combined output** is what can finally be measured. The dotted feedback arrow is modern operational advice: observe failures and revise data, prompts, components, or policy. It is not necessarily part of the original experiment.
+Notice that both paths read the same input and are added at the end, only an r-number vector crosses the narrow gap, and the dotted edge is the deployment step of Part C.
+
+```mermaid
+flowchart TD
+    BASE["One frozen base model in GPU memory (350 GB for GPT-3 in FP16)"] --> SERVE["Serving: base plus one small file"]
+    T1["Task 1 adapter B1 A1 (about 35 MB)"] -->|"add B1 A1 to W_0"| SERVE
+    T2["Task 2 adapter B2 A2 (about 35 MB)"] -->|"subtract B1 A1, add B2 A2"| SERVE
+    SERVE -->|"requests for the active task"| OUT["answers at base-model speed"]
+    BASE -.->|"100 tasks: 350 GB + 100 x 35 MB is about 354 GB, versus about 35 TB"| OUT
+```
+
+Notice the limit the paper admits (Section 4.2): after merging, a batch serves one task; mixing tasks in one batch needs the unmerged path.
+
+## Words you need
+
+| Term | Plain definition | Example from the worked example |
+|---|---|---|
+| Fine-tuning | Continuing training on a task's examples, changing every weight; yields a full model copy per task. | Changing all 150,994,944 numbers of one W_q, and every other matrix too. |
+| Frozen weights (W_0) | Pre-trained numbers held fixed: no gradient, no change. | The 3 x 3 W_0 of Part B. |
+| Low-rank update (B A) | A change written as a tall thin matrix times a short wide one, so it has at most r independent directions. | 12,288 x r times r x 12,288. |
+| Rank (r) | For a matrix, the count of independent rows or columns; in LoRA, the chosen narrow size. | r = 1, 4, 8 in Part A. |
+| Scaling factor (alpha / r) | Constant multiplying the LoRA path so changing r needs less retuning (Section 4.1). | 1 in the toy; 8 / 8 for RoBERTa base, 32 / 4 for GPT-2 (Appendix D). |
+| Adapter | A small extra layer inserted in series; every pass must run through it. | Table 1: adapters add 2 to 30 percent latency. |
+| Prefix / prompt tuning | Learning extra "virtual token" vectors placed before the input or at each layer; they use up sequence length. | PreEmbed and PreLayer in Tables 3, 4, 15. |
+| Merge | Computing W = W_0 + B A once and serving W. | Part C. |
+| Optimizer state | Extra running numbers the training algorithm (Adam) keeps for each trained parameter. | LoRA skips these for the frozen 175 billion (Section 1). |
+| Intrinsic rank | The hypothesis that the needed change occupies few directions. | Table 6: rank 1 is competitive. |
+| Subspace similarity (phi) | A [0, 1] score of how much one set of directions lies within another (Equation 4). | Figure 3. |
 
 ## Tutorial 1 - Intuitive understanding
 
-Use placing a small transparent correction sheet over an expensive master blueprint instead of redrawing and storing the blueprint for every client. The point of the analogy is not that a model thinks like a person. It separates three ideas that are easy to blur: prior material, a procedure that uses that material, and evidence that the resulting behavior improved.
+### What was broken before
 
-### The problem in ordinary language
+A pre-trained model is a stack of tables of numbers. Making it good at one job, such as turning a plain-English question into a database query, is done by fine-tuning: keep training on examples, changing every number. For GPT-3 175B each job then yields a new 175-billion-number copy, about 350 GB at two bytes each (Section 4.2); the paper calls deploying many such instances "prohibitively expensive" (Abstract). Training needs more memory still: LoRA lowers GPT-3 175B training memory from 1.2 TB to 350 GB (Section 4.2).
 
-Full fine-tuning stores and trains a complete parameter copy per task; adapter modules can add inference latency or architectural complexity. The authors ask: Can large pretrained models be adapted by training a tiny low-rank update instead of changing every weight? Their answer is LoRA freezes pretrained weights and injects trainable low-rank matrices into selected linear transformations. This is important because it identifies an intervention one can compare, rather than treating “more intelligence” as an explanation.
+Three alternatives existed, each with a flaw the paper names:
 
-Walk through one case. First comes **frozen weight W0**. Nothing downstream can recover information that was never present or accessible here. Next, **input x** determines what is emphasized, hidden, retrieved, assigned, or compared. Then **low-rank A then B** performs the key computation or organizational step. **scaled update** is where an internal result becomes an answer, patch, action, score, or treatment. Only **combined output** is directly visible to evaluation.
+- **Fine-tune only some parts.** The paper's GPT-2 baseline that retrains just the last two layers (FT-Top2) scored BLEU 68.1 on the E2E restaurant task against 68.2 for full fine-tuning and 70.4 for LoRA (Table 3), and on unseen WebNLG categories BLEU 18.9 against 27.7 for full fine-tuning (Table 14).
+- **Adapters** (small layers inserted inside each block). They are small to store but sit in series with the original computation. Table 1, GPT-2 medium, batch size 1, sequence length 128: 19.8 ms per forward pass without, 25.8 ms with Houlsby-style adapters, 30.3 percent slower. For an assistant answering one user at a time, that is about a third more waiting.
+- **Prefix and prompt tuning.** Leave the model alone and learn virtual words placed before the input. They eat into the room for the real input (Section 3), and they are touchy: on GPT-3, more virtual tokens made accuracy fall (WikiSQL 63.1 percent at 256 prefix tokens, 55.9 at 512; Table 15).
 
-The analogy breaks in three places. A language model has numeric parameters rather than lived experience. A benchmark supplies a restricted scoring rule rather than ordinary human judgment. And a production system has permissions, costs, adversarial inputs, and downstream consequences absent from a tidy experiment. The analogy is a memory aid for the flow, never evidence for consciousness or correctness.
+None of these is the same as giving the model more text at question time (few-shot prompting). Appendix A shows its limit on GPT-3: six in-context examples scored 40.6 percent on MNLI-m (Multi-Genre Natural Language Inference, matched; chance is 33.3 percent) where a fine-tuned copy scored 89.5 (Table 8): about 49 more right in every 100 pairs. That is 2020-era GPT-3; see the caveat under "What this does not show".
 
-### Mechanism, step by step
+### The idea
 
-1. Define the task boundary. The paper uses RoBERTa tasks from GLUE, DeBERTa on natural-language understanding, and GPT-2/GPT-3 generation and few-shot adaptation comparisons. Decide what the system sees and what is withheld.
-2. Encode or organize the input. For a frozen weight W0, learn Delta W = BA where rank r is much smaller than the input and output dimensions. During inference BA can be merged into W0, adding no extra layer latency.
-3. Apply the central rule. In compact notation: h = W0 x + (alpha/r) B A x, where A is r by d and B is k by r. The symbols are unpacked in Tutorials 2 and 3.
-4. Produce an observable outcome. Preserve intermediate artifacts so a failure can be located rather than guessed.
-5. Compare against a baseline under the same conditions. A baseline answers “better than what?”; without it, a score has little explanatory force.
+**Analogy.** A printed encyclopedia is bought once. For a new reader a publisher could reprint all of it (fine-tuning), splice a new chapter between every pair of chapters (adapters), or tape a note to the cover (prompt tuning). LoRA is a thin transparent overlay per page, wide and tall but only a few lines thick; laid on the page it changes how some entries read, and once you are sure, you print the overlay onto the page so nothing extra is left to flip. Readers share one encyclopedia and swap overlay sets.
 
-### What the experiments show - and do not show
+**Where it breaks.** An overlay only alters what it covers; LoRA's update is a sum that interacts with everything computed downstream. And the thinness is a bet: the paper hypothesises the change a task needs is "low rank" (Section 4.1). It worked on their tasks, and the authors say a task in a language different from pre-training might need far more (Section 7.2).
 
-On GPT-3 175B, LoRA reduces trainable parameters by roughly 10,000 times and GPU memory by about three times relative to full fine-tuning while matching or exceeding strong adaptation baselines across evaluated NLP tasks.
+**Rank in numbers.** [[1, 2], [2, 4]] has rank 1: row two is twice row one. It equals the column [1, 2] times the row [1, 2]. At 2 x 2 that saves nothing, but for 12,288 x 12,288 a rank-1 pair stores 24,576 numbers in place of 150,994,944. LoRA forces the update to have only r independent ingredients.
 
-The evidence supports the paper's stated comparison, not every nearby claim. Low intrinsic update rank is an empirical hypothesis, not a guarantee. Rank, target modules, scaling, optimizer, and data determine quality; merging many tenant adapters and serving them efficiently are separate systems problems. A useful reading therefore keeps four columns: claim, operational measure, observed comparison, and remaining alternative explanations. If a number rises, ask whether the input, data split, compute, prompt, tool access, or human population also changed.
+### How it works, step by step
 
-For a nontechnical teach-back, explain the five boxes in the concept map without using the paper's acronyms. Then answer: what was changed, what was held comparable, what was measured, and what failure would still be possible after a high score? If you cannot name a failure, you have probably turned a bounded experiment into a general promise.
+1. **Choose matrices and a rank.** Default: W_q and W_v in every layer, r from 1 to 8 (Section 4.2, Table 6). For GPT-3 that is the shapes in Part A.
+2. **Freeze W_0, start B at zero, A random Gaussian** (Section 4.1). B A = 0, so day one equals the pre-trained model.
+3. **Train only A and B.** Input goes down both paths of the first diagram and the outputs add (Part B: [7, 5, 5] + [-1, 0, -2] = [6, 5, 3]). Gradients and optimizer state exist only for A and B, which is where the memory saving comes from.
+4. **Scale by alpha / r.** The paper says it sets alpha to the first r it tried and does not tune it (Section 4.1; Tutorial 3 notes the tables disagree).
+5. **Merge for deployment** (Part C), keeping B and A in a small file to swap tasks.
+
+### What the results say
+
+What the paper reports, with what each number counts and what it means.
+
+**Size and speed (Sections 1, 4.2).** For GPT-3 175B: 10,000 times fewer trainable parameters than Adam fine-tuning, "3 times" less GPU memory (Abstract), training memory 1.2 TB to 350 GB (3.4 times, guide's division), and a "25% speedup" in training. Footnote 5 gives 32.5 tokens per second per V100 GPU for full fine-tuning and 43.1 for LoRA, which is 33 percent more tokens per second, or 24.6 percent less time per token. So "25%" is the time saved, not the throughput gain (guide's inference).
+
+**Language understanding (Table 2, GLUE, the General Language Understanding Evaluation: eight sentence tasks, scores out of 100).** "Avg." is the mean of the eight scores (guide re-computed them; all match). RoBERTa base (a refined BERT, 125M parameters): full fine-tuning 86.4, LoRA (0.3M trainable) 87.2. That is about 400 times fewer numbers and 0.8 average points higher, but most of the gap is the small RTE task (86.6 against 78.7), where the LoRA run began from an MNLI-trained checkpoint (see Tutorial 3). RoBERTa large (355M): 88.9 against 89.0 with 0.8M trainable, a tie given per-task noise of 0.2 to 2.5. DeBERTa XXL (1.5B): 91.1 against 91.3 with 4.7M, also a tie.
+
+**Generation (Table 3, E2E).** Restaurant record to sentence; BLEU (Bilingual Evaluation Understudy, word overlap with human references) is the headline. GPT-2 medium: full fine-tuning BLEU 68.2 with 354.92M trainable parameters; LoRA 70.4 with 0.35M, noise 0.1. About two more BLEU points from a method that trains roughly a thousand times fewer numbers. GPT-2 large: 70.4 against 68.5.
+
+**GPT-3 (Table 4).** WikiSQL (question about a table to SQL, logical-form accuracy), MNLI-m (accuracy), SAMSum (chat summaries, ROUGE: word and phrase overlap with the human summary).
+
+| Method | Trainable | WikiSQL | MNLI-m | SAMSum ROUGE-1 / 2 / L |
+|---|---|---|---|---|
+| Full fine-tuning | 175,255.8M | 73.8 | 89.5 | 52.0 / 28.0 / 44.5 |
+| LoRA (r = 1 on W_q and W_v, or r = 2 on W_v) | 4.7M | 73.4 | 91.7 | 53.8 / 29.8 / 45.9 |
+| LoRA (larger) | 37.7M | 74.0 | 91.6 | 53.4 / 29.2 / 45.1 |
+| Adapter-H | 40.1M | 73.2 | 91.5 | 53.2 / 29.0 / 45.1 |
+
+Quoted noise (Table 4 caption): 0.5 on WikiSQL, 0.1 on MNLI-m, 0.2 on ROUGE-1. So on WikiSQL every row is within noise of 73.8: LoRA matches, it does not beat. On MNLI-m, 91.7 against 89.5 is 22 more correct per 1,000 pairs and about 20 times the noise: real. On SAMSum, +1.8 ROUGE-1 is about nine times the noise.
+
+**Which matrices, which rank (Tables 5 and 6).** At a fixed 18 million parameters, W_q alone (r = 8) scored 70.4 on WikiSQL and W_q with W_v (r = 4 each) 73.7. W_q with W_v scored 73.4 at r = 1 and 73.8 at r = 8.
+
+### What this does not show
+
+- **Not that LoRA always equals fine-tuning.** Models tested: 125M to 1.5B encoders, GPT-2, GPT-3, on benchmarks with thousands of examples. A new language is the authors' own named exception (Section 7.2).
+- **Not that LoRA beats prompting on modern assistants.** The prompt baseline is one GPT-3 benchmark with six examples; nothing tests instruction-tuned models ([InstructGPT](./08-instructgpt.md) and later) or retrieval at answer time.
+- **Not that training is cheap.** The 350 GB of GPT-3 weights must still sit in memory.
+- **Not knowledge injection.** Every task is a skill or format. The paper never teaches LoRA new facts and tests recall; assuming it works would be going beyond the evidence.
+- **Not mixed-task serving.** Merged weights serve one task per batch.
+
+### Teach-back
+
+1. Why can a 12,288 x 12,288 update be described by 24,576 numbers at rank 1?
+2. Why start B at zero?
+3. The speedup is "25 percent" yet tokens per second differ by 33 percent. Why are both right?
+4. On WikiSQL, why is "matches" the honest word, not "beats"?
+5. A colleague wants LoRA on a hosted model reached only through an API. What is wrong?
+
+<details>
+<summary>Answer 1</summary>
+The update is a 12,288 x 1 column times a 1 x 12,288 row; each entry of the big matrix is one column number times one row number, so 24,576 stored numbers generate 150,994,944 entries, all lying along one direction.
+</details>
+
+<details>
+<summary>Answer 2</summary>
+It makes B A exactly zero at the start, so training departs from the known-good pre-trained model (Section 4.1). With both random, the first pass would add noise at every layer.
+</details>
+
+<details>
+<summary>Answers 3 to 5</summary>
+3. 43.1 / 32.5 is plus 32.6 percent throughput; the same work takes 32.5 / 43.1 = 75.4 percent of the time, 24.6 percent saved. The paper does not say which it means. 4. LoRA's 73.4 and 74.0 are 0.4 and 0.2 points from 73.8, inside the quoted 0.5 noise. 5. LoRA needs the weights to freeze and to add matrices into; a text-only API offers neither. The equivalent there is the provider's own fine-tuning service, if any, or better prompts and context.
+</details>
 
 ## Tutorial 2 - Practitioner understanding
 
-The implementation contract is **frozen weight W0 -> input x -> low-rank A then B -> scaled update -> combined output**. Treat each arrow as an interface with typed input, output, error, latency, and provenance. The paper's core mechanism is summarized by: h = W0 x + (alpha/r) B A x, where A is r by d and B is k by r. Symbols such as theta denote learned parameters; x denotes observed input; y denotes an output or target; probabilities are conditional on the information shown after the vertical bar. Paper-specific names are defined in the glossary.
+### The design in concrete terms
 
-```mermaid
-flowchart LR
-  A["frozen weight W0"] --> B["input x"]
-  B --> C["low-rank A then B"]
-  C --> D["scaled update"]
-  D --> E["combined output"]
-  E -. feedback and audit .-> A
+**What is trained.** For each chosen W_0 (d x k): B (d x r, zero start) and A (r x k, Gaussian start). Forward pass h = W_0 x + (alpha / r) B A x. Biases, LayerNorm and the MLP (multi-layer perceptron) blocks stay frozen: "We limit our study to only adapting the attention weights" (Section 4.2). Trainable count = 2 x L x d_model x r with L the number of adapted matrices (Section 5.1).
+
+**Which matrices (Table 5, fixed 18M budget, GPT-3).**
+
+| Adapted | Rank | WikiSQL (noise 0.5) | MultiNLI (noise 0.1) |
+|---|---|---|---|
+| W_q | 8 | 70.4 | 91.0 |
+| W_k | 8 | 70.0 | 90.8 |
+| W_v | 8 | 73.0 | 91.0 |
+| W_o | 8 | 73.2 | 91.3 |
+| W_q, W_k | 4 | 71.4 | 91.3 |
+| W_q, W_v | 4 | 73.7 | 91.3 |
+| W_q, W_k, W_v, W_o | 2 | 73.7 | 91.7 |
+
+Spreading a fixed budget over more matrices beats concentrating it. The text calls W_q plus W_v best, yet all four at rank 2 ties it on WikiSQL and leads on MultiNLI by 0.4 (four times the noise). The table supports "all four attention matrices at low rank" at least as well as the stated default.
+
+**Hyper-parameters the paper gives (Appendix D).**
+
+| Model | r | alpha | Learning rate | Batch | Epochs | Other |
+|---|---|---|---|---|---|---|
+| RoBERTa base (Table 9) | 8 | 8 | 4e-4 to 5e-4 | 16 or 32 | 25 to 80 | AdamW, warmup 0.06, linear decay |
+| RoBERTa large (Table 9) | 8 | 16 | 2e-4 to 4e-4 | 4 or 8 | 10 to 30 | max length 128 or 512 |
+| DeBERTa XXL (Table 10) | 8 | 8 | 6e-5 to 2e-4 | 4 to 32 | 5 to 30 | warmup 0.1 |
+| GPT-2 (Table 11) | 4 | 32 | 2e-4 | 8 | 5 | warmup 500 steps, beam 10 |
+| GPT-3 (Table 12, D.4) | 1 to 8 | not stated | 2e-4 | 128 | 2 | weight decay 0.1; full fine-tuning used 5e-6 |
+
+Two notes. The LoRA learning rate is far above full fine-tuning's (2e-4 against 5e-6, 40 times) because only a few fresh numbers move. And alpha is described as untuned, "the first r we try", yet GPT-2 uses alpha 32 with r = 4 (scale 8) and RoBERTa large 16 with r = 8 (scale 2); see the list of inconsistencies in Tutorial 3.
+
+**Shipping unit.** Pairs (A_i, B_i) named by matrix, plus r and alpha. Constructed by this guide: a 32-layer, d_model = 4,096 open model at r = 8 on W_q and W_v has 2 x 32 x 8 x 8,192 = 4,194,304 numbers, about 8.4 MB.
+
+### A minimal version
+
+A PyTorch-like sketch (constructed by this guide, not the authors' released code, whose repository is named in the abstract). PyTorch stores a linear weight as (d_out, d_in), which equals the paper's d x k.
+
+```python
+import torch, torch.nn as nn
+
+class LoRALinear(nn.Module):
+    def __init__(self, base: nn.Linear, r=8, alpha=8.0):
+        super().__init__()
+        self.base, self.scale, self.merged = base, alpha / r, False
+        for p in base.parameters():
+            p.requires_grad = False                          # W_0 frozen
+        d_out, d_in = base.weight.shape                      # (d, k)
+        self.A = nn.Parameter(torch.randn(r, d_in) * 0.01)   # (r, k), random start
+        self.B = nn.Parameter(torch.zeros(d_out, r))         # (d, r), zero start
+
+    def forward(self, x):                                    # x: (batch, d_in)
+        out = self.base(x)                                   # W_0 x -> (batch, d_out)
+        if not self.merged:
+            out = out + self.scale * (x @ self.A.T) @ self.B.T   # + B A x
+        return out
+
+    @torch.no_grad()
+    def merge(self):                                         # W = W_0 + scale * B A
+        if not self.merged:
+            self.base.weight += self.scale * (self.B @ self.A); self.merged = True
+
+    @torch.no_grad()
+    def unmerge(self):
+        if self.merged:
+            self.base.weight -= self.scale * (self.B @ self.A); self.merged = False
+
+def add_lora(model, targets=("q_proj", "v_proj"), r=8, alpha=8.0):
+    for _, mod in list(model.named_modules()):
+        for name, child in list(mod.named_children()):
+            if name in targets and isinstance(child, nn.Linear):
+                setattr(mod, name, LoRALinear(child, r, alpha))
+    return model
+
+model = add_lora(model)                                      # any Transformer
+trainable = [p for p in model.parameters() if p.requires_grad]
+opt = torch.optim.AdamW(trainable, lr=2e-4)                  # state only for A and B
+# train as usual; save {name: (A, B)} per LoRALinear.
+# deploy: for m in model.modules(): isinstance(m, LoRALinear) and m.merge()
 ```
 
-### Architecture and data flow
+The paper says A is "random Gaussian" without giving the spread; 0.01 is this guide's choice. Before shipping, compare outputs before and after `merge()` on a few inputs; differences should be rounding-level (about 1e-5 in 32-bit, larger in half precision).
 
-1. Materialize **frozen weight W0** as a versioned artifact or logged event. Define its schema, owner, failure states, and acceptance check.
-2. Materialize **input x** as a versioned artifact or logged event. Define its schema, owner, failure states, and acceptance check.
-3. Materialize **low-rank A then B** as a versioned artifact or logged event. Define its schema, owner, failure states, and acceptance check.
-4. Materialize **scaled update** as a versioned artifact or logged event. Define its schema, owner, failure states, and acceptance check.
-5. Materialize **combined output** as a versioned artifact or logged event. Define its schema, owner, failure states, and acceptance check.
+### What it costs
 
-For a frozen weight W0, learn Delta W = BA where rank r is much smaller than the input and output dimensions. During inference BA can be merged into W0, adding no extra layer latency. For a faithful small-scale implementation, resist substituting a modern component until the original behavior is reproduced. Pin the dataset snapshot, tokenizer or parser, model identifier, prompt/adaptation format, random seeds, decoding parameters, metric implementation, and environment image. Store raw predictions as well as aggregate scores.
+Everything not marked "paper" is this guide's estimate.
 
-The minimum observable pipeline logs a run identifier, source revision, configuration digest, input identifier, component versions, timing, output, error category, and evaluation result. Do not log secrets or unrestricted customer content. For agents or code execution, isolate the runtime and allowlist tools; for retrieval, record document identifiers and index revision; for human studies, record assignment and missingness without exposing identity.
+- **Training memory, small open model (constructed).** A 7-billion-parameter model has 14 GB of 16-bit weights. Full fine-tuning with Adam commonly needs about 16 bytes per trained parameter (weight, gradient, two 32-bit averages): about 112 GB. LoRA at r = 8 trains 4.2 million numbers: about 67 MB of gradient and state, plus the 14 GB of weights. Activations (intermediate results kept for the backward pass) are not removed and may dominate. So about 112 GB falls to about 15 GB plus activations: large, but nothing like 10,000 times.
+- **Paper's GPT-3 numbers.** 350 GB equals 175 billion x 2 bytes, so the LoRA figure appears to be the weights alone; the paper gives no breakdown (guide's observation).
+- **Storage.** 100 GPT-3 tasks: about 354 GB against about 35 TB (Section 4.2, footnote 4). For the 7B toy: 100 adapters is about 840 MB.
+- **Latency.** Merged: zero extra. Unmerged: about 2 x r x (d + k) multiply-adds per token per matrix, here 131,072 against 16.8 million for the frozen 4,096 x 4,096 multiply (0.8 percent of the arithmetic). But thin sequential steps use GPUs poorly (Table 1's lesson for adapters), so expect more than 0.8 percent of time (guide's inference).
 
-### Evaluation, operations, and reproduction
+### How it fails
 
-The study's evaluation material is RoBERTa tasks from GLUE, DeBERTa on natural-language understanding, and GPT-2/GPT-3 generation and few-shot adaptation comparisons. The headline evidence is: On GPT-3 175B, LoRA reduces trainable parameters by roughly 10,000 times and GPU memory by about three times relative to full fine-tuning while matching or exceeding strong adaptation baselines across evaluated NLP tasks.
+| Symptom | Likely cause | Mitigation |
+|---|---|---|
+| Below full fine-tuning on a very different task | Rank too small; the paper's own caveat is a new language (Section 7.2) | Raise r, adapt all four attention matrices, compare with a full fine-tune on a subset |
+| Output same as the base model | B stayed near zero: learning rate too low or too few steps | Use a LoRA-scale rate (2e-4, Table 12); log the norm of B A |
+| Loss diverges | alpha / r or learning rate too large; the paper says alpha acts like a learning rate (Section 4.1) | Lower either; keep alpha / r fixed when changing r |
+| Dev gain vanishes in use | Best epoch chosen on the same data (Appendix D) | Hold out a test split never used for any choice |
+| Mixed tasks in one batch | Merged form serves one task (Section 4.2) | Keep adapters unmerged and route per request |
+| Adapter breaks after the base is updated | B A was learned against the old W_0 (guide's inference; untested in the paper) | Pair each adapter with its exact base checkpoint |
+| Model reproduces training text | Fine-tuning can memorise; not studied | Treat adapter files as holding the training data for access control |
+| Tiny data overfits | Long schedules on few examples | Table 16: 100 MNLI examples gave 63.8 percent (LoRA) against 60.2 (full), far below the 91.7 reached with 392,000 |
 
-Run reproduction in four gates:
+### Evaluating your version
 
-1. **Fixture gate.** Hand-check ten examples end to end. Expected result: schemas, prompts, labels, and tests agree with the paper's task definition.
-2. **Baseline gate.** Reproduce the simplest reported comparator before the proposed method. Expected result: the score is directionally consistent; investigate large deviations before continuing.
-3. **Intervention gate.** Change only the paper's central mechanism. Expected result: raw paired outputs are retained and the reported metric is recomputed from them.
-4. **Robustness gate.** Repeat across seeds, prompt variants, subgroups, and plausible perturbations. Expected result: report a distribution and failure taxonomy, not only the best run.
+- **Metric:** the task's own rule: exact match or schema validity for structured output, accuracy for labels; ROUGE only for summaries, plus a human read.
+- **Baselines, in order:** base model with a good prompt; base model with prompt plus retrieved examples; LoRA at r = 1 or 2 and r = 8; if feasible on a subset, full fine-tuning. Without the first two you do not know that training added anything.
+- **Test size.** Accuracy of 80 percent on 400 items has standard error sqrt(0.8 x 0.2 / 400) = 2 points, so gaps under about 4 points are not real; at 1,600 items the error is 1 point. Use at least 400 items, and 1,000 or more to separate methods one point apart.
+- **Stop rule.** Fix the validation metric beforehand; stop after several evaluations without improvement; evaluate the final adapter once on the held-out set. Keep LoRA only if it beats the best context-only baseline by more than two standard errors and passes the merged-versus-unmerged check.
 
-Operational acceptance needs more than the paper score. Define quality, cost per accepted outcome, median and tail latency, error recovery, privacy exposure, and human override. Use a shadow deployment first. Sample failures by category, not only at random, because rare severe failures may disappear in averages. Low intrinsic update rank is an empirical hypothesis, not a guarantee. Rank, target modules, scaling, optimizer, and data determine quality; merging many tenant adapters and serving them efficiently are separate systems problems.
+### Adopt, adapt or skip
 
-### Build lab
+**Recommendation for a team building an assistant over private business documents: skip LoRA at first, adapt it later for one narrow job, and do not use it to inject documents.**
 
-Create a small implementation with 50-200 licensed or synthetic cases. Commit a data card, configuration, runner, raw-output directory excluded when sensitive, evaluation script, and a one-page result memo. Your result memo must distinguish faithful settings from modernization. Acceptance means another practitioner can rerun one command, obtain the same schema, and explain any score difference using recorded versions rather than speculation.
+1. **Different problem.** Such an assistant mostly fails because the right passage is not in front of the model: a job for retrieval and context ([RAG](./06-rag.md), [Agentic Context Engineering](../06-agent-systems/31-agentic-context-engineering.md)). LoRA changes behaviour, not visibility, and the paper never tests fact recall. Documents also change weekly; an adapter is frozen at training time and cannot cite a source.
+2. **Where it earns its keep:** a stable, repeated, format-heavy job: documents to a fixed record layout, tickets to a fixed label list, a house style. That matches the paper's tasks (text to SQL, chat to summary, labels). If a small open model still fails at it with clear instructions and good examples in context, an r = 8 adapter on a few thousand verified examples is the cheapest next step, and the base stays shared across jobs.
+3. **Open and smaller models are the sweet spot.** One base, several swappable adapters, no per-job copy. With a hosted model you cannot do this unless the provider offers fine-tuning.
+4. **Costs the paper does not price:** verified training data, an evaluation harness, adapter-to-base version control, retraining when the base changes. A prompt change takes minutes and is reversible.
+5. **Order:** instructions and examples; retrieval; memory for recurring facts; then, if one narrow job still fails, collect examples and try LoRA. For the curriculum's through-question (is a thin runtime around a model that picks among a few good tools enough?), LoRA bears on the "model" half: it is the lever when behaviour, not inputs, is the bottleneck. This guide's judgment is that it is a later, targeted step.
 
 ## Tutorial 3 - Researcher understanding
 
-The formal object is not “an intelligent system”; it is a conditional mechanism or estimator operating under a design. The central expression is h = W0 x + (alpha/r) B A x, where A is r by d and B is k by r. Derive it by naming each random variable or matrix, its domain and shape, what is observed, what is learned, and what is marginalized or compared. Then identify which term encodes the paper's intervention.
+### Formal setup
 
-For predictive papers, empirical risk is an average loss over sampled examples, and optimization chooses theta. For benchmark papers, the model may be fixed while an estimator maps outputs to a score. For causal field studies, treatment assignment and counterfactual assumptions carry the identification burden. For protocol and survey papers, the formal object is a taxonomy or compatibility relation; evidence is coverage and discriminating usefulness, not predictive accuracy.
+**Notation.** x: a context token sequence; y: a target sequence; Z = {(x_i, y_i)}, i = 1..N: a task's data (Section 2). P_Phi(y | x): the pre-trained autoregressive model with parameters Phi. Full fine-tuning (Equation 1) maximises the sum over (x, y) in Z and positions t of log P_Phi(y_t | x, y_{<t}) from Phi_0, learning a delta of the size of Phi_0. LoRA (Equation 2) writes the delta as Delta Phi(Theta) with |Theta| far smaller. Per layer: W_0 is d x k (frozen); Delta W = B A, B in R^(d x r), A in R^(r x k), r much smaller than min(d, k); h = W_0 x + Delta W x (Equation 3), with the LoRA term scaled by alpha / r. In GPT-3, d = k = 12,288 and the feed-forward width is 4 x d_model.
 
-### Experimental evidence and quantitative reconstruction
+**Subspace similarity (Equation 4, Appendix G).** phi(A_{r=8}, A_{r=64}, i, j) = ||(U_8^i)-transpose times U_64^j||_F squared, divided by min(i, j), where U^i holds the top i right-singular vectors. Toy (constructed): u = [1, 0], v = [0.8, 0.6]; inner product 0.8, squared 0.64, min(1, 1) = 1, so phi = 0.64. If v = [0, 1], phi = 0; if v = u, phi = 1.
 
-On GPT-3 175B, LoRA reduces trainable parameters by roughly 10,000 times and GPU memory by about three times relative to full fine-tuning while matching or exceeding strong adaptation baselines across evaluated NLP tasks. Reconstruct this evidence from raw units before looking at the aggregate. Specify RoBERTa tasks from GLUE, DeBERTa on natural-language understanding, and GPT-2/GPT-3 generation and few-shot adaptation comparisons. Record exclusions, missing outputs, retries, decoding samples, human adjudication, and whether observations are independent. Recreate the main table with one row per system or group and columns for configuration, compute/tool access, sample count, metric, uncertainty, and source location.
+**Amplification factor (Appendix H.4).** ||Delta W||_F divided by ||U-transpose W V-transpose||_F, with U and V the singular vectors of Delta W: how large the update is compared with W's own content in the same directions.
 
-The most important comparison is the one that varies the proposed contribution while holding plausible confounders steady. A model-size comparison can confound data and compute; a retrieval comparison can confound context length; an agent comparison can confound total token budget and tool calls; a workplace comparison can confound worker selection unless treatment timing is credibly identified. These are threats to validity to test, not reasons to dismiss results automatically.
+### The claims, stated precisely
 
-### Validity, replication, ablations, and extensions
+1. **Size and memory (Abstract, Section 4.2).** Against GPT-3 175B with Adam: up to 10,000 times fewer trainable parameters, about 3 times less GPU memory, checkpoint 350 GB to about 35 MB (r = 4, W_q and W_v). One model, one setting.
+2. **Quality.** "On-par or better" than fine-tuning on RoBERTa, DeBERTa, GPT-2, GPT-3, on GLUE, E2E, WebNLG, DART, WikiSQL, MNLI-m, SAMSum (Tables 2, 3, 4, 13, 14).
+3. **No added inference latency** when merged (Section 4.1); adapters add it (Table 1, Figure 5). 4. **25 percent faster training** on GPT-3 (footnote 5).
+5. **Low intrinsic rank** (Sections 4.1, 7): Table 6, Figure 3, Table 7.
+6. **Generalises fine-tuning** (Section 4.1): all matrices plus biases with r equal to the full rank "roughly" recovers full expressiveness. An argument, not a measurement: the largest rank tested is 64 (Table 15), far below 12,288.
+7. **Better scaling than prefix methods**: LoRA's quality stabilises with parameter count while prefix methods fall (Table 15 caption, Figure 2).
 
-Low intrinsic update rank is an empirical hypothesis, not a guarantee. Rank, target modules, scaling, optimizer, and data determine quality; merging many tenant adapters and serving them efficiently are separate systems problems.
+### Evidence, table by table
 
-Design three ablations. First remove the proposed mechanism while preserving total budget. Second replace it with a simple alternative. Third perturb the setting where the authors' explanation predicts the largest change. State a directional hypothesis before running. Use paired examples when possible, blind human evaluators to condition, report uncertainty at the correct unit, and correct or disclose multiple comparisons.
+**Dataset key (Appendix C).** GLUE tasks: MNLI; SST-2 (Stanford Sentiment Treebank, binary sentiment); MRPC (Microsoft Research Paraphrase Corpus); CoLA (Corpus of Linguistic Acceptability, Matthews correlation); QNLI (Question-answering Natural Language Inference); QQP (Quora Question Pairs); RTE (Recognizing Textual Entailment); STS-B (Semantic Textual Similarity Benchmark, Pearson correlation). WikiSQL: 56,355 train, 8,421 validation. SAMSum: 14,732 train, 819 test. E2E: about 42,000 train, 4,600 validation, 4,600 test.
 
-For replication, freeze an “original-like” track and a “modern” track. The original-like track tests whether the published relationship can be recovered. The modern track tests persistence under current models, data, and tooling. Do not interpret a modern failure as proof the original result was false, or a modern success as exact replication. For extension, choose one new population or domain, one new failure-oriented metric, and one cost or safety constraint. A strong extension explains how each result would update the causal or mechanistic story.
+**Table 1 (latency).** Rows: fine-tune/LoRA, Adapter-L, Adapter-H; columns: (batch, length) = (32, 512), (16, 256), (1, 128) with 0.5M, 11M, 11M adapter parameters. Times in ms: 1449.4 against 1482.0 and 1492.2 (+2.2, +3.0 percent); 338.0 against 354.8 and 366.3 (+5.0, +8.4); 19.8 against 23.9 and 25.8 (+20.7, +30.3). Identifies the added sequential computation on one GPU (NVIDIA Quadro RTX8000, 100 trials, GPT-2 medium); says nothing about quality. At batch 1 the baseline's standard deviation is 2.7 ms, so Adapter-L's 4.1 ms gap is only about 1.5 times the noise. Three factors change together across columns; Figure 5's grid separates them (up to over 30 percent).
 
-#### Research notebook lens 1: mechanism
+**Table 2 (GLUE).** Averages: RoBERTa base: FT 86.4, BitFit 85.2, Adapter-D 84.4 and 85.4, LoRA 87.2. RoBERTa large: FT 88.9, LoRA 89.0; dagger runs: Adapter-P 88.4 and 87.9, Adapter-H 87.8 and 86.4, LoRA 88.6. DeBERTa XXL: FT 91.1, LoRA 91.3. Caveats: asterisk rows are copied from earlier papers; main LoRA rows start MRPC, RTE and STS-B from the MNLI checkpoint (Appendix D.1) while dagger rows start from the plain pre-trained model: RoBERTa large RTE is 87.4 against 85.2 and the average 89.0 against 88.6, an upper bound on what initialisation is worth (the dagger setup also changes batch size and length); results are medians over 5 seeds with the best epoch per run (Appendix D.1), so scores are selected on the dev data; gaps of 0.1 to 0.3 are inside task noise.
 
-For **mechanism**, write the strongest claim supported by the paper, quote no prose, and point to the table, figure, equation, or design element that supplies the evidence. Next write a plausible alternative explanation and one controlled comparison that separates it. Apply this specifically to: LoRA freezes pretrained weights and injects trainable low-rank matrices into selected linear transformations. The acceptance criterion must be observable. A negative result is informative if the manipulation, sample, and measurement had enough power to expose the predicted change. Record the paper configuration first and modernization changes second so the comparison remains interpretable.
+**Table 3 (E2E).** Columns BLEU, NIST, METEOR (Metric for Evaluation of Translation with Explicit ORdering), ROUGE-L, CIDEr (Consensus-based Image Description Evaluation). GPT-2 medium: FT 68.2, 8.62, 46.2, 71.0, 2.47; LoRA 70.4, 8.85, 46.8, 71.8, 2.53. Large: FT 68.5, 8.78, 46.0, 69.9, 2.45; LoRA 70.4, 8.89, 46.8, 72.0, 2.47. Several baselines are copied from Li and Liang (2021) while LoRA was tuned (Appendix D.3), so the comparison favours LoRA somewhat. Tables 13 (DART) and 14 (WebNLG) show ties or small gains, with FT-Top2 weak.
 
-#### Research notebook lens 2: data
+**Table 4 and Figure 2 (GPT-3).** One noise figure per task, not per row, because of cost (Section 5.5), so close calls cannot be certified. LoRA at 4.7M against 37.7M shows no benefit from more parameters. Figure 2: prefix methods rise then fall, adapters plateau, LoRA stays flat and high.
 
-For **data**, write the strongest claim supported by the paper, quote no prose, and point to the table, figure, equation, or design element that supplies the evidence. Next write a plausible alternative explanation and one controlled comparison that separates it. Apply this specifically to: LoRA freezes pretrained weights and injects trainable low-rank matrices into selected linear transformations. The acceptance criterion must be observable. A negative result is informative if the manipulation, sample, and measurement had enough power to expose the predicted change. Record the paper configuration first and modernization changes second so the comparison remains interpretable.
+**Tables 5 and 6.** Table 6, WikiSQL: W_q alone 68.8, 69.6, 70.5, 70.4, 70.0 at r = 1, 2, 4, 8, 64; W_q with W_v 73.4, 73.3, 73.7, 73.8, 73.5; all four 74.1, 73.7, 74.0, 74.0, 73.9. Identifies: for those matrices rank is not the lever (a 0.4 spread, inside the 0.5 noise); W_q alone does gain from rank (+1.7 from r = 1 to 4).
 
-#### Research notebook lens 3: evaluation
+**Table 7 and Figures 3, 4, 8.** Layer 48 of 96. Norm of W_q projected onto the top-r directions of Delta W_q, of W_q itself, or of a random matrix: at r = 4, 0.32, 21.67, 0.02 (||W_q||_F = 61.95, ||Delta W_q||_F = 6.91); at r = 64, 1.90, 37.71, 0.33 (||Delta W_q||_F = 3.57). Paper's reading: Delta W relates to W more than chance; it does not repeat W's top directions; amplification is huge (6.91 / 0.32 = 21.6 by this guide, about 2 at r = 64: 3.57 / 1.90 = 1.88). This is an association in one layer, one matrix and a few tasks, not evidence of cause. Figure 3: the top direction at r = 8 overlaps the one at r = 64 (phi above 0.5), others do not; Figure 4: two seeds at r = 64 share some directions, two random matrices none.
 
-For **evaluation**, write the strongest claim supported by the paper, quote no prose, and point to the table, figure, equation, or design element that supplies the evidence. Next write a plausible alternative explanation and one controlled comparison that separates it. Apply this specifically to: LoRA freezes pretrained weights and injects trainable low-rank matrices into selected linear transformations. The acceptance criterion must be observable. A negative result is informative if the manipulation, sample, and measurement had enough power to expose the predicted change. Record the paper configuration first and modernization changes second so the comparison remains interpretable.
+**Tables 8, 15, 16, 18.** Table 8: few-shot against fine-tuned, MNLI-m 40.6 / 89.5, RTE 69.0 / 85.4. Table 15: 30-row GPT-3 sweep; LoRA flat, prefix methods non-monotonic, LoRA plus prefix-embedding 75.0 to 76.2 on WikiSQL. Table 16: MNLI with 100, 1k, 10k, 392k examples: LoRA 63.8, 85.6, 89.2, 91.7; full fine-tune 60.2, 85.8, 88.9, 89.5; PrefixEmbed 37.6 (chance 33.3) to 88.6. Table 18: GPT-2 medium E2E, r from 1 to 1,024: BLEU 70.38 at r = 4, about 69 beyond; validation loss reaches 1.16 at r = 16.
 
-#### Research notebook lens 4: systems
+### Ablations and what they isolate
 
-For **systems**, write the strongest claim supported by the paper, quote no prose, and point to the table, figure, equation, or design element that supplies the evidence. Next write a plausible alternative explanation and one controlled comparison that separates it. Apply this specifically to: LoRA freezes pretrained weights and injects trainable low-rank matrices into selected linear transformations. The acceptance criterion must be observable. A negative result is informative if the manipulation, sample, and measurement had enough power to expose the predicted change. Record the paper configuration first and modernization changes second so the comparison remains interpretable.
+- **Matrix type at fixed budget (Table 5):** where to spend parameters; confounded because rank differs across rows to hold the budget.
+- **Rank (Tables 6, 15, 18):** isolates rank; Table 18's caption says hyper-parameters were tuned at r = 4.
+- **Prefix methods versus LoRA across parameter counts (Table 15, Figure 2):** token count is prefix methods' knob and also shrinks input space, so "more parameters" and "less room" move together.
+- **Low data (Table 16)** and **combination with prefix (Appendix E).**
 
-#### Research notebook lens 5: human factors
+### Threats to validity specific to this paper
 
-For **human factors**, write the strongest claim supported by the paper, quote no prose, and point to the table, figure, equation, or design element that supplies the evidence. Next write a plausible alternative explanation and one controlled comparison that separates it. Apply this specifically to: LoRA freezes pretrained weights and injects trainable low-rank matrices into selected linear transformations. The acceptance criterion must be observable. A negative result is informative if the manipulation, sample, and measurement had enough power to expose the predicted change. Record the paper configuration first and modernization changes second so the comparison remains interpretable.
+- **Selection on evaluation data.** Best epoch per run on validation sets (Appendix D.1 to D.4), for the tuned method, against partly copied baselines.
+- **Baseline reuse.** Asterisk rows differ in unknown ways; the paper's dagger rows exist because of this.
+- **One noise figure for GPT-3** (Section 5.5).
+- **Memory claim not itemised** (1.2 TB to 350 GB).
+- **Rank analysis is one layer** (48 of 96, with others in Figures 6 and 7) and two matrices; Section 7.2 itself says small r will not suit every task.
+- **Era.** 2021 models only: no instruction-tuned, long-context, quantised or mixture-of-experts models.
 
-#### Research notebook lens 6: security
+**Inconsistencies and unverifiable points found (none silently corrected above).**
 
-For **security**, write the strongest claim supported by the paper, quote no prose, and point to the table, figure, equation, or design element that supplies the evidence. Next write a plausible alternative explanation and one controlled comparison that separates it. Apply this specifically to: LoRA freezes pretrained weights and injects trainable low-rank matrices into selected linear transformations. The acceptance criterion must be observable. A negative result is informative if the manipulation, sample, and measurement had enough power to expose the predicted change. Record the paper configuration first and modernization changes second so the comparison remains interpretable.
+1. *Checkpoint size.* "35MB" (Section 4.2) and "roughly 35MB if stored in FP16" for 18M parameters (Section 7.1). 18,874,368 numbers are 37.7 MB; Table 15 prints 18.8M (truncated). True ratio about 9,300, not 10,000.
+2. *Speedup wording.* "25%" matches time saved (24.6 percent), not throughput (+32.6 percent).
+3. *alpha.* Section 4.1 says alpha is set to the first r tried and not tuned, but Tables 9 to 11 use alpha 8 with r = 8, 16 with r = 8 (RoBERTa large), 32 with r = 4 (GPT-2).
+4. *Table 5 text.* "W_q and W_v ... best performance overall", yet all four at rank 2 ties it on WikiSQL (73.7) and beats it on MultiNLI (91.7 against 91.3).
+5. *Table 4 versus Table 15.* The 37.7M row of Table 4 (74.0, 91.6) matches neither 37.7M row of Table 15 (r = 8 on W_q, W_v: 73.8, 91.6; r = 4 on all four: 74.0, 91.7), so it looks like a mix. The caption says LoRA beats fine-tuning, but the 4.7M row's WikiSQL (73.4) is 0.4 below 73.8.
+6. *Table 6 versus Table 15.* W_q with W_v at r = 64 on WikiSQL: 73.5 against 73.6.
+7. *Counts this guide cannot reproduce.* Formula of Section 5.1 gives 393,216 for GPT-2 medium (reported 0.35M), 737,280 for GPT-2 large (0.77M) and 2,359,296 for DeBERTa XXL (4.7M), assuming 24 layers and d = 1,024; 36 and 1,280; 48 and 1,536. Those architecture figures are this guide's recollection, not in the paper, so the cause may be architecture details (speculation). RoBERTa (294,912 and 786,432) and all GPT-3 counts reproduce.
+8. *Typos.* W_c for W_o in Section 7.2; "Infernece" in Table 1; Appendix D.4 points to "Section D.4" from itself.
+9. *Amplification.* 6.91 / 0.32 = 21.6, text says 21.5 and Appendix H.4 "as large as 20".
+10. *Table 2 average.* RoBERTa large LoRA's scores average 89.05, printed 89.0; other averages recompute exactly.
+11. *Table 18 caption.* Validation loss "peaks at r = 16": it is 1.16 from r = 16 through 512, a plateau.
 
-## Appendix - Prerequisites
+### Open problems and follow-ups
 
-### Prerequisite 1 - Vector and matrix representations
+The authors list (Section 8): combining LoRA with other efficient methods; how pre-trained features become task features; principled choice of matrices; whether W itself is rank-deficient. Appendix H.2 leaves open how optimal rank scales with model size.
 
-#### Intuition and formal bridge
+### What would change my mind
 
-A vector is an ordered list of numbers; a matrix is a rectangular array that maps vectors into new representations. In language systems, a row can represent a token, document, answer choice, agent state, or measured outcome. The dot product a^T b multiplies matching coordinates and sums them. It is useful as a similarity or compatibility score, but it is not automatically a probability or explanation. If X has n rows and d features, X is in R^(n by d). Multiplying X by W in R^(d by k) yields n rows with k transformed features. Always annotate shapes: most silent implementation errors are illegal or unintended broadcasts. Rank measures how many independent directions a matrix can express; a low-rank factorization BA restricts an update to a smaller subspace. For probability vectors, nonnegative entries sum to one; softmax converts arbitrary logits z_i into exp(z_i)/sum_j exp(z_j). Numerical stability uses z_i - max(z).
+- A replication tuning full fine-tuning as hard as LoRA and winning by more than the noise on the GPT-3 tasks would weaken "on par or better".
+- Rank-1 collapse on a task shifted in domain but not language would narrow the intrinsic-rank claim.
+- An itemised memory budget at a stated sequence length would show how far the "3 times" claim carries to real training.
+- Adapters and merged LoRA at equal accuracy and production batch sizes would show the true latency gap.
 
-#### Worked application
+## Reading map for the PDF
 
-Start with one miniature instance and label every quantity. For this paper, use the five-stage path shown in the concept map. Write the input at stage one, the state passed between stages, the decision or transformation at each arrow, and the observed output. Then perturb one input while holding the rest fixed. This exercise turns an abstract prerequisite into a falsifiable understanding of the mechanism. Check dimensions for numeric operations, provenance for data operations, and authority for agent actions.
+| Section or figure | What it contains | First pass | Guide section that answers it |
+|---|---|---|---|
+| Abstract, Section 1, Figure 1 | Claim, diagram of A and B, advantages | Read | Worked example |
+| Section 2 | Objective, Equations 1 and 2 | Skim | Tutorial 3, Formal setup |
+| Section 3, Table 1 | Why adapters add latency, prefix tuning is hard | Read | Tutorial 1, What was broken before |
+| Section 4.1 | The update, initialisation, scaling, merge | Read closely | Parts B, C; minimal version |
+| Section 4.2 | Matrices, memory and storage, limits | Read | Tutorial 2, What it costs |
+| Section 5, Tables 2-4, Figure 2 | Baselines and results | Skim tables, read text | Tutorial 1 results; Tutorial 3 |
+| Section 6 | Related work | Skip | Open problems |
+| Section 7, Tables 5-7, Figures 3-4 | Which matrices, rank, what the update looks like | Read 7.1, 7.2; skim 7.3 | Tutorial 2 design; Tutorial 3 |
+| Appendices A, B | Few-shot against fine-tuned; adapter latency grid | Read A; skim B | Tutorial 1; Tutorial 3 |
+| Appendices C, D | Datasets, hyper-parameters | Skim | Tutorial 2 table |
+| Appendices E-H | Prefix combination, extra runs, similarity maths, rank sweeps | Skip at first | Tutorial 3 |
 
-#### How this paper uses it
+## Questions readers get stuck on
 
-The concrete representation path is frozen weight W0 -> input x -> low-rank A then B -> scaled update -> combined output. The paper's formal core can be summarized as h = W0 x + (alpha/r) B A x, where A is r by d and B is k by r. Identify which objects are vectors, matrices, scalar scores, discrete choices, or observed outcomes before manipulating the notation.
+### What does "low rank" actually mean, and why should an update be low rank?
 
-#### Common misconceptions
+Rank counts independent directions: [[1, 2], [2, 4]] has rank 1 because row two is double row one. LoRA forces the weight change to have rank at most r. Why that should suffice is the paper's hypothesis (Section 4.1), borrowed from "intrinsic dimension" research; Table 6 supports it on GPT-3, and Figures 3 and 4 give a picture in terms of shared singular directions.
 
-Do not confuse a representation with the thing represented, an optimized proxy with the real objective, correlation with intervention, an average with a guarantee, or benchmark success with deployment safety. State assumptions beside each calculation and mark any detail that the source does not establish.
+### Why two matrices, A and B, and not one small one?
 
-**References:** Gilbert Strang, Introduction to Linear Algebra, 5th ed.; Deisenroth, Faisal, and Ong, Mathematics for Machine Learning.
+A single small matrix cannot change a 12,288 x 12,288 weight: shapes would not fit. A maps 12,288 inputs down to r numbers; B maps those back up to 12,288 outputs. The product has full shape but rank at most r, and storage is 2 x 12,288 x r instead of 12,288 squared.
 
-### Prerequisite 2 - Gradient-based learning and objectives
+### Why start B at zero and A at random?
 
-#### Intuition and formal bridge
+If both were zero, neither could receive a gradient, since each one's gradient is proportional to the other. If both were random, the model would start perturbed. Random A with zero B gives a zero start and a nonzero gradient for B on the first step (Section 4.1). The mirror choice is not discussed in the paper.
 
-Learning chooses parameters theta to reduce an objective L(theta). A gradient is the local slope: theta_next = theta - eta grad L, where eta is a learning rate. Cross-entropy -log p_theta(y|x) penalizes low probability on the observed target. A training objective is a design contract, not the same as user value. Regularization, early stopping, validation splits, batch construction, random seeds, and optimizer state all influence the learned solution. In preference learning, the objective may contain a learned reward and a penalty that keeps the policy near a reference. In empirical studies with no model training, optimization still appears in estimation: choose coefficients minimizing residual error or maximizing a likelihood. Causal conclusions require design assumptions in addition to an optimized fit.
+### Does the 10,000 times figure mean I can train a 175B model on a laptop?
 
-#### Worked application
+No. It is the saved checkpoint (350 GB to 35 MB at r = 4 on W_q and W_v). Training memory falls about 3 times, from 1.2 TB to 350 GB, still cluster-sized. Tutorial 2's 7-billion case shows the frozen weights dominating.
 
-Start with one miniature instance and label every quantity. For this paper, use the five-stage path shown in the concept map. Write the input at stage one, the state passed between stages, the decision or transformation at each arrow, and the observed output. Then perturb one input while holding the rest fixed. This exercise turns an abstract prerequisite into a falsifiable understanding of the mechanism. Check dimensions for numeric operations, provenance for data operations, and authority for agent actions.
+### How is LoRA different from fine-tuning just the last few layers?
 
-#### How this paper uses it
+FT-Top2 trains whole matrices in the last two layers (24 to 25 million parameters on GPT-2 medium, Tables 3 and 13). LoRA touches every layer through thin updates (0.35 million). It did better on generation: E2E BLEU 70.4 against 68.1, and unseen WebNLG categories 46.7 against 18.9 (Table 14).
 
-For this paper, the central objective or estimator is: h = W0 x + (alpha/r) B A x, where A is r by d and B is k by r. Separate what is directly optimized from what is merely evaluated. That distinction explains why success on RoBERTa tasks from GLUE, DeBERTa on natural-language understanding, and GPT-2/GPT-3 generation and few-shot adaptation comparisons does not by itself optimize every deployment goal.
+### If adapters are tiny too, why is LoRA faster?
 
-#### Common misconceptions
+Adapters are in series: data flows through the original layer and then the adapter, and tiny sequential steps keep a GPU poorly occupied. Table 1 shows +20.7 to +30.3 percent at batch size 1. LoRA's side path vanishes on merging. The paper also notes the gap shrinks at large batch and long sequence (Appendix B).
 
-Do not confuse a representation with the thing represented, an optimized proxy with the real objective, correlation with intervention, an average with a guarantee, or benchmark success with deployment safety. State assumptions beside each calculation and mark any detail that the source does not establish.
+### Does merging change the model's answers?
 
-**References:** Goodfellow, Bengio, and Courville, Deep Learning; Boyd and Vandenberghe, Convex Optimization.
+Mathematically no (Part C). In floating point there can be tiny differences, more in half precision or when merging into a quantised base, which the paper does not test. Run the before-and-after output comparison from Tutorial 2.
 
-### Prerequisite 3 - Task and data representation
+### Why only the query and value matrices?
 
-#### Intuition and formal bridge
+"For simplicity and parameter-efficiency" (Section 4.2), then Table 5 tests alternatives. W_q with W_v at r = 4 tied all four at r = 2 on WikiSQL (73.7) and trailed on MultiNLI (91.3 against 91.7). So the evidence supports W_q plus W_v and equally all four at lower rank.
 
-Before computation, the task must define inputs, outputs, permissible context, and the unit of prediction. Text tokenization splits strings into vocabulary units; embeddings map identifiers to vectors; position information distinguishes order. Code repositories add files, syntax trees, imports, tests, and version history. Agent systems add messages, roles, tools, state, and termination events. Evaluation records must preserve these transformations because a change in prompt template, tokenizer, repository snapshot, or tool schema changes the task. A useful data sheet records origin, license, collection time, filtering, splits, duplicates, sensitive fields, and expected deployment differences.
+### Is LoRA the same as prompt tuning or giving the model more context?
 
-#### Worked application
+No. Prompt and prefix tuning learn extra vectors fed in with the input and keep weights fixed; giving context writes text into the prompt and nothing is learned. LoRA changes the weights through B A, so its effect needs no prompt tokens and lives in the model you ship. That is why the paper counts savings in storage and training memory, and why only people who can train can use it.
 
-Start with one miniature instance and label every quantity. For this paper, use the five-stage path shown in the concept map. Write the input at stage one, the state passed between stages, the decision or transformation at each arrow, and the observed output. Then perturb one input while holding the rest fixed. This exercise turns an abstract prerequisite into a falsifiable understanding of the mechanism. Check dimensions for numeric operations, provenance for data operations, and authority for agent actions.
+### Does "better than fine-tuning" mean LoRA is more accurate in general?
 
-#### How this paper uses it
+No. On GPT-3 WikiSQL it is within 0.4 of fine-tuning, inside the 0.5 noise; on RoBERTa large GLUE the gap is 0.1. Clear wins are MNLI-m (91.7 against 89.5), SAMSum and E2E. The abstract's "on-par or better" is the careful reading.
 
-The paper operationalizes its task through RoBERTa tasks from GLUE, DeBERTa on natural-language understanding, and GPT-2/GPT-3 generation and few-shot adaptation comparisons. Its pipeline - frozen weight W0 -> input x -> low-rank A then B -> scaled update -> combined output - determines what information is available and what counts as an answer. A reproduction must preserve those boundaries before comparing scores.
+### How do I choose r and alpha?
 
-#### Common misconceptions
+r is the narrow size of A and B; alpha scales the path by alpha / r. Appendix D uses r = 8 for the encoders, 4 for GPT-2 and 1 to 8 for GPT-3. Start with all four attention matrices or W_q and W_v at r = 8, alpha = r (scale 1), tune the learning rate first, and only then rank.
 
-Do not confuse a representation with the thing represented, an optimized proxy with the real objective, correlation with intervention, an average with a guarantee, or benchmark success with deployment safety. State assumptions beside each calculation and mark any detail that the source does not establish.
+## Prerequisites you actually need
 
-**References:** Jurafsky and Martin, Speech and Language Processing, 3rd-edition online draft; Kleppmann, Designing Data-Intensive Applications.
+### Prerequisite 1 - Matrix shapes and multiplication
 
-### Prerequisite 4 - Measurement and statistical uncertainty
+A d x k matrix times a length-k vector gives a length-d vector; inside shapes must match, so (d x r) times (r x k) is d x k. Tiny example: a 3 x 1 column [1, 0, 2] times a 1 x 3 row [1, -1, 0] gives a 3 x 3 matrix whose first row is [1, -1, 0] and third [2, -2, 0], the B A of Part C. Used in Section 4.1 and every parameter count. See the [math bridge](../../references/math-bridge.md).
 
-#### Intuition and formal bridge
+### Prerequisite 2 - Matrix rank
 
-A metric is a measuring instrument, not the property itself. Accuracy estimates a proportion correct; pass@k estimates whether at least one of k sampled programs succeeds; latency measures time, not correctness; human preference mixes several judgments. Report the experimental unit, sample count, aggregation rule, and uncertainty. For mean m from n approximately independent units with sample standard deviation s, a rough standard error is s/sqrt(n), but paired, clustered, repeated, or adaptive observations need appropriate resampling or models. A confidence interval describes estimator behavior under assumptions; it is not the probability that a fixed parameter lies in one computed interval. Multiple comparisons and benchmark tuning can create apparently impressive results by chance.
+The number of independent rows. [[1, 2], [2, 4]] has rank 1; [[1, 2], [2, 5]] has rank 2 (determinant 1 x 5 - 2 x 2 = 1, not zero). A product of d x r and r x k matrices never exceeds rank r. Used in Section 4.1 and Section 7.2. See the [glossary](../../references/glossary.md).
 
-#### Worked application
+### Prerequisite 3 - What the optimizer must remember
 
-Start with one miniature instance and label every quantity. For this paper, use the five-stage path shown in the concept map. Write the input at stage one, the state passed between stages, the decision or transformation at each arrow, and the observed output. Then perturb one input while holding the rest fixed. This exercise turns an abstract prerequisite into a falsifiable understanding of the mechanism. Check dimensions for numeric operations, provenance for data operations, and authority for agent actions.
+Adam keeps two running averages per trained number, so each trained number costs several times its own size in memory. Tiny example: training 1 million numbers with weight, gradient and two averages at 4 bytes each is 16 MB; training only 10,000 costs 160 KB for gradients and averages, while the frozen weights still cost 4 MB. Used in Section 1 and Section 4.2. See [InstructGPT](./08-instructgpt.md) for a full fine-tune at scale.
 
-#### How this paper uses it
+### Prerequisite 4 - Attention's four matrices
 
-The reported evidence is On GPT-3 175B, LoRA reduces trainable parameters by roughly 10,000 times and GPU memory by about three times relative to full fine-tuning while matching or exceeding strong adaptation baselines across evaluated NLP tasks. These measurements support a bounded comparison under the paper's design. They do not mean statistical uncertainty was measured unless the paper reports an interval, resampling method, or model. Recompute metrics at the original experimental unit and add uncertainty appropriate to dependence in the data.
+Each attention layer uses a query matrix and key matrix (to score which tokens attend to which), a value matrix (what gets passed on) and an output matrix (mixing heads back). Tiny example: at width 4, each is 4 x 4 = 16 numbers, 64 per layer. Used in Sections 4.2 and 7.1. See the [Transformer guide](../01-foundations/01-transformer.md).
 
-#### Common misconceptions
+### Prerequisite 5 - Similarity between directions
 
-Do not confuse a representation with the thing represented, an optimized proxy with the real objective, correlation with intervention, an average with a guarantee, or benchmark success with deployment safety. State assumptions beside each calculation and mark any detail that the source does not establish.
+For unit-length arrows the dot product is the cosine of the angle between them. [1, 0] and [0.8, 0.6] have dot product 0.8 (about 37 degrees), squared 0.64: the paper's phi for one direction each. For several directions, Equation 4 squares and averages the overlaps. Needed only for Section 7.2 and 7.3.
 
-**References:** Wasserman, All of Statistics; Pearl, Glymour, and Jewell, Causal Inference in Statistics: A Primer.
+## Where this sits in the curriculum
 
-### Prerequisite 5 - Algorithms, parallelism, and systems cost
+**Read before:** [the Transformer](../01-foundations/01-transformer.md) for the matrices LoRA edits, [GPT-3](../01-foundations/03-gpt3.md) for the model that makes fine-tuning costly and few-shot prompting possible, and [InstructGPT](./08-instructgpt.md), whose full-model training is what LoRA makes cheaper to store and swap (guide's inference: InstructGPT does not use LoRA; they are different rungs on one ladder from prompts to weights).
 
-#### Intuition and formal bridge
+**Nearest papers.** InstructGPT changes behaviour by training all weights on human-feedback signals; LoRA is indifferent to the training signal and cheapens the update. [Chain-of-thought](./07-chain-of-thought.md) changes behaviour without touching weights, by changing what the model reads. [RAG](./06-rag.md) changes the input by fetching documents, the complement of LoRA for knowledge.
 
-Complexity asks how work, memory, latency, and sequential depth scale. Big-O hides constants, hardware utilization, network calls, serialization, retries, and queueing. An LLM system should be budgeted end to end: input tokens, output tokens, retrieval, tool calls, sandbox execution, human review, storage, and failure recovery. Throughput and tail latency are different. A system that averages one second may still have a harmful 99th percentile. Reproducibility requires pinned code and data versions, immutable prompts/configuration, environment manifests, deterministic seeds where supported, logs with secret redaction, and explicit timeout/retry/idempotency behavior.
+**For the agent stage.** The curriculum's working assumption is that capability should come from context, instructions and memory ([Agentic Context Engineering](../06-agent-systems/31-agentic-context-engineering.md)). LoRA is the exception: when the model's own behaviour is the bottleneck and context cannot fix it, a swappable adapter on a small open model is the cheapest way to change weights. [CodeAct](../06-agent-systems/25-codeact.md) is an example where a model was tuned for agent behaviour.
 
-#### Worked application
-
-Start with one miniature instance and label every quantity. For this paper, use the five-stage path shown in the concept map. Write the input at stage one, the state passed between stages, the decision or transformation at each arrow, and the observed output. Then perturb one input while holding the rest fixed. This exercise turns an abstract prerequisite into a falsifiable understanding of the mechanism. Check dimensions for numeric operations, provenance for data operations, and authority for agent actions.
-
-#### How this paper uses it
-
-The operational path is frozen weight W0 -> input x -> low-rank A then B -> scaled update -> combined output. Profile every stage rather than attributing all cost to the language model. Preserve the paper's configuration for faithful reproduction, then separately test modern batching, caching, indexing, quantization, or parallelism.
-
-#### Common misconceptions
-
-Do not confuse a representation with the thing represented, an optimized proxy with the real objective, correlation with intervention, an average with a guarantee, or benchmark success with deployment safety. State assumptions beside each calculation and mark any detail that the source does not establish.
-
-**References:** Goodfellow, Bengio, and Courville, Deep Learning; Kleppmann, Designing Data-Intensive Applications.
-
-### Prerequisite 6 - Validity, reliability, safety, and governance
-
-#### Intuition and formal bridge
-
-Validity asks whether evidence supports the stated claim. Internal validity concerns confounding, leakage, implementation differences, and measurement error. External validity concerns new users, languages, domains, models, and time periods. Reliability concerns repeatability under perturbations and operational failures. Safety requires its own evidence: benchmark accuracy, regularization, open code, or a fluent explanation does not establish security, privacy, fairness, or acceptable agency. Use threat modeling, least privilege, input/output validation, human approval for consequential actions, incident logging, rollback, and periodic monitoring. NIST AI RMF separates governance, mapping, measurement, and management rather than treating one score as approval.
-
-#### Worked application
-
-Start with one miniature instance and label every quantity. For this paper, use the five-stage path shown in the concept map. Write the input at stage one, the state passed between stages, the decision or transformation at each arrow, and the observed output. Then perturb one input while holding the rest fixed. This exercise turns an abstract prerequisite into a falsifiable understanding of the mechanism. Check dimensions for numeric operations, provenance for data operations, and authority for agent actions.
-
-#### How this paper uses it
-
-The paper-specific limitations are: Low intrinsic update rank is an empirical hypothesis, not a guarantee. Rank, target modules, scaling, optimizer, and data determine quality; merging many tenant adapters and serving them efficiently are separate systems problems. These are not erased by code release or benchmark gains. A deployment review should map users, data boundaries, failure impact, human override, access control, monitoring, and rollback before increasing autonomy.
-
-#### Common misconceptions
-
-Do not confuse a representation with the thing represented, an optimized proxy with the real objective, correlation with intervention, an average with a guarantee, or benchmark success with deployment safety. State assumptions beside each calculation and mark any detail that the source does not establish.
-
-**References:** NIST AI Risk Management Framework 1.0; OWASP Top 10 for Large Language Model Applications; Wasserman, All of Statistics.
-
-## Paper-specific glossary
-
-- **rank:** number of independent directions in a matrix
-- **adapter:** task-specific trainable component
-- **frozen weight:** parameter excluded from updates
-- **merge:** add BA into W0 for inference
-- **intrinsic dimension:** effective dimension needed for adaptation
-- **PEFT:** parameter-efficient fine-tuning
-
-- **Baseline:** comparison condition used to interpret a result.
-- **Ablation:** controlled removal or replacement of one component.
-- **Threat to validity:** reason an observed result may support a narrower claim than stated.
-- **Reproduction:** rerunning a result with substantially the same artifacts and procedure.
-- **Replication:** testing the same claim with independently constructed artifacts or a changed setting.
-
-## Source boundaries and further reading
-
-This tutorial is a structured explanation of [LoRA: Low-Rank Adaptation of Large Language Models](https://arxiv.org/abs/2106.09685) grounded in the repository's downloaded PDF. It paraphrases rather than reproduces the paper. Numerical claims should be checked against the original tables and appendices before citation, procurement, or deployment. The prerequisite lessons synthesize the named textbooks and standards; they are not claims made by the paper. Protocol behavior, model APIs, and benchmark leaderboards can change after publication, so verify current primary specifications separately.
+**Read next.** [ReAct](./10-react.md): a model acting in a loop with prompts alone, the no-training counterpart.
 
 ## Checkpoint
 
-- **Intuition:** explain the five-box map, the everyday analogy, the intervention, the headline evidence, and two things the paper does not prove.
-- **Practitioner:** implement a small pipeline, reproduce a baseline and intervention, retain raw outputs, report cost/latency/failure categories, and explain every versioned dependency.
-- **Researcher:** derive h = W0 x + (alpha/r) B A x, where A is r by d and B is k by r, reconstruct the main comparison, identify three threats to validity, and preregister an ablation plus an external replication with explicit acceptance criteria.
+1. **Compute.** For a 4,096 x 4,096 matrix at rank 8, how many numbers do A and B contain, and what is the ratio to the full matrix?
+2. **Compute.** W_0 = [[2, 0], [0, 1]], B = [[1], [1]], A = [[1, 0]], x = [3, 4]. Find W_0 x + B A x, then the merged W and W x.
+3. **Explain.** Why does merged LoRA add no latency while adapters do?
+4. **Compute.** From 32.5 and 43.1 tokens per second, give the throughput gain and the time saved.
+5. **Critique.** The paper says W_q and W_v is best in Table 5. Does the table agree? What default would you pick?
+6. **Critique.** Table 2: LoRA 87.2 against fine-tuning 86.4 on RoBERTa base. Give two reasons not to read this as a clean win.
+7. **Decide.** 500 policy documents change weekly and answers must be grounded in them. Use LoRA?
+
+<details>
+<summary>Answers</summary>
+
+1. A: 8 x 4,096 = 32,768; B: 32,768; total 65,536. Full: 16,777,216. Ratio 256 times fewer.
+2. B A = [[1, 0], [1, 0]]; A x = 3; B A x = [3, 3]; W_0 x = [6, 4]; sum [9, 7]. Merged W = [[3, 0], [1, 1]]; W x = [9, 3 + 4] = [9, 7]. They agree.
+3. W = W_0 + B A has W_0's shape, so inference is the original forward pass. Adapters are extra serial layers run on every pass, and small size does not help at small batch (Table 1: +20.7 to +30.3 percent at batch 1).
+4. Gain 43.1 / 32.5 - 1 = 32.6 percent; time saved 1 - 32.5 / 43.1 = 24.6 percent. The paper's "25%" matches the latter.
+5. Table 5 ties W_q with W_v (73.7, 91.3) with all four at rank 2 (73.7, 91.7). Default: all four attention matrices at r = 2 to 4, verified on your own data.
+6. RTE alone contributes 7.9 points (86.6 against 78.7) and that LoRA run began from an MNLI-trained checkpoint (Appendix D.1); and best-epoch selection on dev data plus copied fine-tuning numbers.
+7. Not first. The need is grounded answers from changing documents: retrieval and context. LoRA would freeze last week's facts into weights and cannot cite sources. Consider it only for a narrow stable behaviour (a fixed format or tone) after prompts and examples fail, and test it against the context-only baseline on held-out data.
+
+</details>
