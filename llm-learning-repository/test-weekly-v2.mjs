@@ -14,6 +14,9 @@ import { fileURLToPath } from "node:url";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "weekly-v2-"));
 process.env.LEARNING_REPO_ROOT = tmp;
+// Isolate from the workflow environment: the weekly workflow sets these, and the tests must not read or write the real
+// part cache or append to the real job summary.
+for (const name of ["TUTORIAL_CACHE_DIR", "WEEKLY_PR_BODY_PATH", "GITHUB_STEP_SUMMARY", "DIGITALOCEAN_MODEL_ID"]) delete process.env[name];
 process.env.MODEL_ACCESS_KEY = "test-key";
 process.env.REQUIRE_THOROUGH_TUTORIALS = "true";
 process.env.TUTORIAL_REQUEST_INTERVAL_MS = "0";
