@@ -155,7 +155,7 @@ Hypotheses to test, not decisions.
 |---|---|
 | Internal tools, one organisation | Enterprise identity provider, MCP servers behind a gateway, token exchange for upstream calls, gateway audit |
 | Third-party MCP servers | Allow-list and pin them; treat descriptions as untrusted; per-tenant credentials from a vault; no passthrough |
-| Calling partner agents over A2A | Verify signed cards, allow-list peers, token exchange with an actor chain, log both identities, a tenant per peer |
+| Calling partner agents over A2A | Verify signed cards, allow-list peers, token exchange with an actor chain, log both identities, a tenant per peer under the [tenant-isolation pattern](../tenant-isolation/README.md) |
 | Prototype | Local stdio servers with a sandbox and human approval; OAuth only once a server is remote |
 | Regulated data | Gateway enforcement plus resource-side checks, per-tenant keys, tamper-evident audit |
 
@@ -170,5 +170,5 @@ Hypotheses to test, not decisions.
 
 - [Specifications evidence](specs-evidence.md) and [arXiv evidence](arxiv-evidence.md)
 - [Agent connectivity stage](../../llm-learning-repository/tutorials/08-agent-connectivity/README.md)
-- [Runtime reference architecture](../runtime-architecture/README.md) and [data access](../data-access/README.md)
+- [Runtime reference architecture](../runtime-architecture/README.md) , [tenant isolation](../tenant-isolation/README.md) and [data access](../data-access/README.md)
 - [Earlier MCP and A2A overview guide](../../llm-learning-repository/tutorials/04-agents-and-protocols/21-interoperability.md)

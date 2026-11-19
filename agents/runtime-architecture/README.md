@@ -206,6 +206,8 @@ Write these as quality scenarios in the [decision method](../../architecture-evo
 - **Credentials belong to the connector, not the model.** The model never sees secrets; the gate chooses which connector identity a call uses.
 - **Egress policy.** A connector that can reach the network is an exfiltration path; allow-list destinations per tool.
 
+Tenant isolation (pool, schema, database or infrastructure per tenant, the standards, transcripts and caches under tenancy) is in the [tenant-isolation pattern](../tenant-isolation/README.md).
+
 How the runtime calls tools and peer agents (MCP, A2A), and the identity, authorization and gateway layers around them, is in the [connectivity pattern](../connectivity/README.md).
 
 For analytics and warehouse questions specifically (NL2SQL and its alternatives), see the [data-access pattern](../data-access/README.md).
