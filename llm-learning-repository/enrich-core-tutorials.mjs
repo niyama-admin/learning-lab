@@ -38,6 +38,10 @@ async function authorNext() {
     const pdfPath = path.join(root, "papers", `${paper.id}.pdf`);
     const tutorialPath = path.join(root, paper.tutorial);
     console.log(`[${index + 1}/${selected.length}] authoring ${paper.id}: ${paper.title}`);
+    if (fs.existsSync(tutorialPath) && /^---\nformat:\s*v2\s*\n/.test(fs.readFileSync(tutorialPath, "utf8")) && !process.argv.includes("--overwrite-v2")) {
+      console.log(`${paper.id}: skipped (v2 guide; pass --overwrite-v2 to replace it with a generated legacy guide)`);
+      continue;
+    }
     const tutorial = await generatePaperTutorial({ paper, pdfPath });
     verifyDetailedTutorial(tutorial, paper.id);
     fs.writeFileSync(tutorialPath, tutorial);
