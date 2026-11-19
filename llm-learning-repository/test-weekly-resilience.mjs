@@ -5,6 +5,7 @@ import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "weekly-resilience-"));
 process.env.LEARNING_REPO_ROOT = tmp;
@@ -82,10 +83,18 @@ reset();
 modelsResponse = () => ({ status: 200, body: { data: [{ id: "text-embedding-3-large" }, { id: "anthropic-claude-4-sonnet" }, { id: "qwen3-8b-instruct" }, { id: "llama-3.3-70b-instruct" }, { id: "whisper-large" }, { id: "qwen3-235b-a22b" }] } });
 behaviour = ({ model }) => ({ status: 200, body: { choices: [{ message: { content: `from ${model}` } }] } });
 json = await createModelResponse("prompt");
-assert.equal(json.choices[0].message.content, "from llama-3.3-70b-instruct", "highest-ranked usable model is used first");
+assert.equal(json.choices[0].message.content, "from qwen3-235b-a22b", "highest-ranked usable model is used first");
 assert.ok(!calls.some(c => /embedding|claude|whisper/.test(c.model)), "non-chat and proprietary models are never requested");
-assert.deepEqual(rankDiscoveredModels(["qwen3-8b-instruct", "qwen3-235b-a22b", "llama-3.3-70b-instruct", "anthropic-claude-4-sonnet", "text-embedding-3-large"]), ["llama-3.3-70b-instruct", "qwen3-235b-a22b", "qwen3-8b-instruct"], "large models rank above small ones; embedding and proprietary excluded");
+assert.deepEqual(rankDiscoveredModels(["qwen3-8b-instruct", "qwen3-235b-a22b", "llama-3.3-70b-instruct", "anthropic-claude-4-sonnet", "text-embedding-3-large"]), ["qwen3-235b-a22b", "llama-3.3-70b-instruct", "qwen3-8b-instruct"], "large models rank above small ones; embedding and proprietary excluded");
 assert.ok(rankDiscoveredModels(["anthropic-claude-4-sonnet", "qwen3-235b-a22b"], { allowProprietary: true }).includes("anthropic-claude-4-sonnet"), "proprietary allowed on request");
+// Regression on the real list the API returned on 2026-11-19 (all four built-in names had disappeared from it).
+const real = JSON.parse(fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "test-fixtures/digitalocean-models-2026-11-19.json"), "utf8")).ids;
+const ranked = rankDiscoveredModels(real);
+assert.ok(ranked.length >= 10, "a usable pool remains");
+assert.ok(ranked.every(id => !/^(anthropic|openai-(?!gpt-oss))|embed|rerank|^router:|image|tts|stable|wan2|bge|e5-|gte-|mpnet|minilm/.test(id)), "no proprietary, embedding, router, image or speech models");
+assert.match(ranked[0], /deepseek.*pro/, "a large open model ranks first");
+assert.ok(ranked.indexOf("deepseek-v4.1-flash") > ranked.indexOf("deepseek-v4-pro"), "flash variants rank below pro");
+assert.ok(!["llama-4-maverick", "kimi-k2.5", "qwen3.5-397b-a17b", "deepseek-4-flash"].some(id => real.includes(id)), "documents why the built-in names failed");
 console.log("ok  discovered models are ranked; non-chat and proprietary models are skipped");
 
 // 3c. If the listed models all fail, the error names them so the operator knows what to configure.

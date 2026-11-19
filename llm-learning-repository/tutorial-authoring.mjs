@@ -77,16 +77,21 @@ const learnedEndpoint = new Map(); // model -> "chat" | "responses"
 
 // Discovery: never use these (not text-generation models), and by default skip proprietary frontier families because
 // the curriculum's goal is open models. Set TUTORIAL_ALLOW_PROPRIETARY=1 to include them.
-const NON_CHAT = /embed|rerank|whisper|tts|speech|audio|image|flux|stable|sdxl|diffusion|vision-only|moderation|guard|ocr/i;
-const PROPRIETARY = /(^|[-/])(anthropic|claude|gpt-4|gpt-5|o1|o3|o4|gemini)([-.]|$)/i;
-const PREFERENCE = [/llama-?4/i, /llama-?3\.3-70b/i, /qwen-?3/i, /deepseek/i, /kimi/i, /gpt-oss/i, /mistral|mixtral/i, /glm/i, /minimax/i, /nemotron/i, /gemma/i, /llama/i, /qwen/i];
-const SMALL = /(^|[-_])(mini|nano|small|tiny|lite|[1-9]b|1[0-9]b|[1-9]\.[0-9]b)([-_.]|$)/i;
+const NON_CHAT = /embed|rerank|whisper|tts|speech|audio|image|flux|stable|sdxl|diffusion|wan2|vision-only|moderation|guard|ocr|^router:|typesafe|(^|[-_])(bge|e5|gte|mpnet|minilm|mini-lm)([-_]|$)/i;
+// Proprietary frontier families: every anthropic/claude/openai model except the open-weights gpt-oss, plus Gemini and
+// anything named "max" (hosted-only flagships).
+const isProprietary = id => /^(anthropic|claude)/i.test(id) || /^openai-(?!gpt-oss)/i.test(id) || /gemini|fable/i.test(id) || /(^|[-_])max($|[-_])/i.test(id);
+// Family preference, strongest first. Judgement, not measurement: large open models with long context and reliable
+// instruction following. Tune with evidence from real runs; pin one with DIGITALOCEAN_MODEL_ID to override.
+const PREFERENCE = [/deepseek.*pro/i, /kimi.*(k3|pro)/i, /glm-?5/i, /gpt-oss-120b/i, /minimax/i, /deepseek/i, /kimi/i, /qwen/i, /llama/i, /mistral|mixtral/i, /nemotron/i, /gemma/i, /mimo/i, /glm/i, /arcee|reflection/i];
+const SMALL = /(^|[-_])(mini|nano|small|tiny|lite|flash|haiku|[1-9]b|1[0-9]b|[1-9]\.[0-9]b)([-_.]|$)/i;
+const VISION_OR_THINKING = /(^|[-_])(vl|thinking)([-_]|$)/i;
 
 export function rankDiscoveredModels(ids, { allowProprietary = false } = {}) {
-  const usable = ids.filter(id => !NON_CHAT.test(id) && (allowProprietary || !PROPRIETARY.test(id)));
+  const usable = ids.filter(id => !NON_CHAT.test(id) && (allowProprietary || !isProprietary(id)));
   const score = id => {
     const tier = PREFERENCE.findIndex(rx => rx.test(id));
-    return (tier < 0 ? PREFERENCE.length + 1 : tier) + (SMALL.test(id) ? 20 : 0);
+    return (tier < 0 ? PREFERENCE.length + 1 : tier) + (SMALL.test(id) ? 20 : 0) + (VISION_OR_THINKING.test(id) ? 5 : 0);
   };
   return usable.map((id, index) => ({ id, index, score: score(id) })).sort((x, y) => x.score - y.score || x.index - y.index).map(x => x.id);
 }
