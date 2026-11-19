@@ -183,4 +183,41 @@ Chosen: ...    Seams used (loop spec, MCP, model over HTTP): ...    Exit plan an
 
 ## 11. Defaults for today
 
-Section 11 is filled in once the framework profiles are complete. It states, by deployment shape, the default language and own-loop-or-framework choice, each with its review date and the evidence it rests on.
+Dated **2026-11-19**. These are the defaults the evidence in this repository supports, **not decisions**: each is a starting hypothesis to test in the spike (Section 6.1) against your own gates. Review them by **2027-02-17** (90 days, because the facts behind them are framework and SDK status). Evidence is in the [language treatise](../agents/languages/README.md) and the [framework profiles](../agents/frameworks/README.md).
+
+### 11.1 The framework default, before the language
+
+**Own the loop, borrow the parts, unless you can name three first-release features a framework supplies that cost more to build than to adopt and pin.** All sixteen profiled frameworks leave permissions, sandboxing, context compaction, cost control and exact cancellation to you, and twelve of them were run, so this is an observed gap and not an inference. What they supply is below the loop: provider adapters, schema generation, an MCP client, tracing, and in some cases durable state. Take those as libraries and keep the loop, the session log and the permission policy yours.
+
+The features that most often justify a framework:
+
+| First-release need | Framework that supplied it in our runs | What it cost |
+|---|---|---|
+| Resumable graph with human gates | LangGraph (checkpoints, interrupts; node-level crash resume ran) | Heavy dependency tree; hard-kill durability untested |
+| Typed model boundary and retries | PydanticAI | V2 removed many V1 names; fast releases |
+| Conversation memory, workflows and evals in TypeScript | Mastra (workflow resume survived a process restart) | About 191 MB install; fast-moving surface |
+| Claude Code's tools, permissions and compaction, Claude only | Claude Agent SDK | Closed 354 MB binary; Claude models only |
+| An existing .NET or JVM platform | Microsoft Agent Framework; Spring AI or LangChain4j | Framework-shaped state; Java MCP is Tier 2 |
+
+### 11.2 By deployment shape
+
+| Shape (Section 2.1) | Language default | Framework default | Why, and the main thing to prove in the spike |
+|---|---|---|---|
+| A. Local agent on user machines | **Rust**, or **Go** if a weaker sandbox story is acceptable | Own loop. No framework unless Claude-only (then evaluate the Claude Agent SDK and its footprint) | Single binary, native sandbox calls, direct MCP SDK (Tier 1). No official Anthropic Rust SDK, so budget a thin HTTP client. Prove the sandbox on every OS you ship |
+| B. Server-side gateway or orchestrator | **Go**; **C#** in a .NET shop | Own loop on the official SDKs. LangGraph only if Python and a durable graph are first-release needs | Cheap concurrency and cancellation. Prove cancellation propagates to the stream and to child processes under injected faults |
+| C. Embedded in an existing product | **C#** on .NET; **Java** on the JVM | Microsoft Agent Framework (.NET) or Spring AI / LangChain4j (JVM) for the application surface; keep the loop and approvals yours when they matter | Reuse the platform's identity and operations. On the JVM accept MCP at Tier 2 and prove the protocol features you need exist |
+| D. Research, evaluation, open-model tuning | **Python** | Own loop or PydanticAI / LangGraph; smolagents only with a real sandbox | Fastest iteration and the model ecosystem. Move stable parts later |
+| E. Edge or offline | **Rust** or **Go** | Own loop; model over a local HTTP server | Footprint and startup dominate. Avoid framework dependency trees |
+
+If the answer to "where does it run?" is "both on user machines and on a server", decide the **loop specification and conformance tests first**, then implement the local variant and the server variant against them; do not pick one language for both without a reason you can test.
+
+### 11.3 What would change these defaults
+
+- A framework above ships a release that gives you permissions, a sandbox, or step-level durability you can verify, or stops breaking its API for two consecutive majors.
+- The MCP Java SDK reaches Tier 1, or Anthropic ships an official Rust SDK (the two verified gaps in the five-language comparison).
+- Your spike shows a framework matches your open model's tool-call format where the owned loop does not (the open-model gate is the one most likely to flip a default).
+- You change shape (Section 9).
+
+### 11.4 Limits of this section
+
+The defaults rest on documentation, package metadata and runs against a scripted stub model. **No profile tested real model behaviour**, so nothing here ranks frameworks by agent quality. Four of the sixteen frameworks (Spring AI, LangChain4j, Eino, rig) were not run at all. The languages treatise contains no measurements; [its Section 9](../agents/languages/README.md#9-how-to-turn-this-into-measurements) specifies the experiment that would produce them.

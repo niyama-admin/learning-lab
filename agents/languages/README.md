@@ -66,7 +66,7 @@ Each profile covers what the language is good at in this job, where it costs you
 
 **Strengths**
 - *Speed of change.* Dynamic typing, a REPL, and trivial dynamic loading mean a plugin or tool can be added at runtime. If the shape of your runtime is still moving, nothing is cheaper to change. (general)
-- *Ecosystem.* The Anthropic client SDK has sync and async clients with Pydantic models (verified); the MCP SDK for Python is Tier 1 (verified); Python is one of two languages for the Claude Agent SDK and for the OpenAI Agents SDK (secondary); Microsoft Agent Framework 1.0 reached general availability for .NET and Python in April 2026 (secondary); Google's Agent Development Kit (ADK) has a Python version.
+- *Ecosystem.* The Anthropic client SDK has sync and async clients with Pydantic models (verified); the MCP SDK for Python is Tier 1 (verified); Python is one of two languages for the Claude Agent SDK and for the OpenAI Agents SDK (secondary); Microsoft Agent Framework reached 1.0 general availability for .NET and Python on 2026-04-03 per Microsoft's devblog (see its [profile](../frameworks/profiles/microsoft-agent-framework.md)); Google's Agent Development Kit (ADK) has a Python version.
 - *Model-side work.* Training, evaluation and tuning libraries live here, as does Apple's MLX for local fine-tuning and inference on Apple Silicon (general). If you tune open models, your pipeline is probably already Python.
 - *Schemas from types.* Pydantic turns a typed function into a JSON Schema, which is the tool-definition problem solved in a few lines. (general)
 
@@ -85,7 +85,7 @@ Each profile covers what the language is good at in this job, where it costs you
 - *Distribution.* A single native binary with no interpreter, small memory footprint, fast start. This is the stated reason for Codex's move away from Node.js (secondary).
 - *OS-level sandboxing.* Direct access to platform sandbox APIs without a managed runtime in the way. (general; the Codex sandbox claim is secondary)
 - *MCP.* The Rust SDK is Tier 1 (verified).
-- *In-process local inference.* `candle` (Hugging Face's Rust ML framework) and `mistral.rs` (quantised models on Apple Silicon, CPU and CUDA, with an OpenAI-compatible HTTP server) mean a Rust runtime can embed a model without a second process (secondary). `rig` is the most visible Rust LLM framework (docs.rs shows version 0.43; secondary on maturity).
+- *In-process local inference.* `candle` (Hugging Face's Rust ML framework) and `mistral.rs` (quantised models on Apple Silicon, CPU and CUDA, with an OpenAI-compatible HTTP server) mean a Rust runtime can embed a model without a second process (secondary). `rig` is the most visible Rust LLM framework: version 0.46.0 on 2026-10-31, 16 minor versions since February 2026, and a README that says releases break APIs (see its [profile](../frameworks/profiles/rig-rust.md); not compiled or run).
 
 **Costs**
 - *No official Anthropic SDK.* Anthropic's official client SDKs cover Python, TypeScript, C#, Go, Java, PHP and Ruby; Rust is not on the list (verified). You use a community crate or write a thin HTTP client. For a runtime this is a modest cost (the API is small and you want control over streaming anyway), but it is a cost.
@@ -100,7 +100,7 @@ Each profile covers what the language is good at in this job, where it costs you
 **Strengths**
 - *Concurrency that fits the problem.* Goroutines and channels with `context.Context` cancellation line up with the loop's needs: one goroutine per session, parallel tool calls, cancellation propagated from the user's interrupt to the in-flight HTTP stream and subprocess. The official Anthropic Go SDK advertises "context-based cancellation" (verified). (general for the rest)
 - *Operations.* A single static binary, trivial cross-compilation, fast start, small footprint, and an operations culture that rewards boring services. (general)
-- *MCP.* The Go SDK is Tier 1 (verified). Google's ADK has a Go version, reported as 1.0 in March 2026 (secondary). Other Go frameworks exist (Eino from CloudWeGo, LangChainGo), but their maturity claims come from aggregator sites and were not verified; the LangChainGo release we saw was from October 2025.
+- *MCP.* The Go SDK is Tier 1 (verified). Google's ADK for Go went 1.0 on 2026-03-20 and is v2.8.0 as of 2026-11-19 (module proxy). Eino from CloudWeGo is still 0.x (v0.9.23, 159 tags since v0.3.0) and LangChainGo's last two releases are a year apart (v0.1.14 on 2025-10-20, v0.1.15 on 2026-10-05). The Go profiles ([Eino](../frameworks/profiles/eino-go.md)) recommend writing the loop on the official Anthropic and MCP SDKs.
 
 **Costs**
 - *No sum types.* Go has no enums with payloads, so modelling "the model returned text, or a tool call, or a refusal, or a stop" uses interfaces and type switches, and the compiler does not tell you when you forgot a case. For a state machine this is the most real weakness. (general)
@@ -114,7 +114,7 @@ Each profile covers what the language is good at in this job, where it costs you
 
 **Strengths**
 - *A good fit for the modelling.* Records, sealed hierarchies and pattern matching give you most of what Rust's enums give you for state machines, with a managed runtime. `async`/`await`, `IAsyncEnumerable` and `Channel<T>` suit streaming and parallel tools. (general)
-- *First-class vendor support.* The official Anthropic C# SDK targets .NET Standard 2.0+ and integrates with `IChatClient`, Microsoft's provider-neutral chat abstraction (verified). The MCP C# SDK is Tier 1 (verified). Microsoft Agent Framework 1.0 reached general availability for .NET and Python in April 2026 as the successor to Semantic Kernel and AutoGen, with graph workflows, checkpointing, middleware and OpenTelemetry (secondary).
+- *First-class vendor support.* The official Anthropic C# SDK targets .NET Standard 2.0+ and integrates with `IChatClient`, Microsoft's provider-neutral chat abstraction (verified). The MCP C# SDK is Tier 1 (verified). Microsoft Agent Framework reached 1.0 general availability on 2026-04-03 with graph workflows, checkpointing, middleware and OpenTelemetry. AutoGen is archived (its README says no fixes or support); Semantic Kernel is not archived and still ships, with migration guides for both. Many satellite packages (Anthropic, Ollama, Claude connector) are still date-stamped betas ([profile](../frameworks/profiles/microsoft-agent-framework.md)).
 - *Enterprise fit.* If the surrounding platform is .NET (identity, hosting, observability, deployment), the agent runtime joins it without a second stack.
 - *Distribution.* Self-contained and ahead-of-time (NativeAOT) builds exist, with trade-offs around reflection-heavy libraries. (general; not rechecked)
 
@@ -129,7 +129,7 @@ Each profile covers what the language is good at in this job, where it costs you
 
 **Strengths**
 - *Mature concurrency for I/O-bound work.* Virtual threads are final since Java 21, so blocking code (including blocking calls to an LLM API) can scale to very many concurrent sessions without callback style (secondary on details; the feature itself is long-standing). The official Anthropic Java SDK offers builders and `CompletableFuture` async (verified).
-- *Frameworks.* Spring AI and LangChain4j both reached 1.0 in May 2025; reports say Spring AI 2.0 became generally available in June 2026 (secondary; confirm against Spring's release notes). Google's ADK for Java reported 1.0 in March 2026 (secondary). A GitHub Copilot SDK for Java was reported in August 2026 (secondary).
+- *Frameworks.* Spring AI is at 2.0.2 (2026-10-23), which requires Spring Boot 4 and a Java 17 baseline; the 1.1.x line stays on Boot 3.5. LangChain4j is at 1.24.0 (2026-11-18) with beta tracks for its agentic and MCP modules. Google's ADK for Java is 1.15.0 (Maven metadata, 2026-11-18). None of these was compiled or run (no JDK); see the [Spring AI](../frameworks/profiles/spring-ai.md) and [LangChain4j](../frameworks/profiles/langchain4j.md) profiles. A GitHub Copilot SDK for Java was reported in August 2026 (secondary).
 - *Enterprise reality.* Where the organisation already runs the JVM with its security, monitoring and deployment practices, a Java runtime inherits them.
 - *Types.* Records and sealed interfaces (modern Java) give workable sum types. (general)
 
@@ -157,7 +157,7 @@ Verified cells come from official pages read on 2026-11-19. Cells marked (g) are
 | OS sandbox integration | Via subprocess or bindings | **Direct** | P/Invoke per OS | Direct via syscalls and subprocess | JNI or subprocess |
 | Dynamic plugins in-process | **Trivial** | Hard (WASM, subprocess) | Possible (assemblies) | Limited (subprocess) | Possible (class loading) |
 | In-process local models | Rich (MLX, llama.cpp bindings, PyTorch) | candle, mistral.rs (secondary) | ONNX-based options (g) | Bindings (g) | Bindings (g) |
-| Agent frameworks | Many (OpenAI Agents SDK, Claude Agent SDK, ADK, Agent Framework) | `rig` (secondary) | Microsoft Agent Framework 1.0 (secondary) | ADK Go, Eino (secondary) | Spring AI, LangChain4j, ADK Java (secondary) |
+| Agent frameworks | Many (LangGraph, OpenAI Agents SDK, Claude Agent SDK, ADK, PydanticAI, Agent Framework) | `rig` 0.46 (API churn) | Microsoft Agent Framework 1.x | ADK Go, Eino 0.x | Spring AI 2.x, LangChain4j 1.x, ADK Java |
 | Iteration speed | **Highest** | Lowest | Medium | Medium-high | Medium |
 | Systems in the eleven-system study | 5 | 1 | 0 | 0 | 0 |
 
@@ -248,7 +248,7 @@ The stub makes the model's latency a controlled variable, so what remains is the
 ## 10. Caveats and how to check this
 
 - **Official pages read on 2026-11-19:** the [MCP SDK list](https://modelcontextprotocol.io/docs/sdk.md) and [tier definitions](https://modelcontextprotocol.io/community/sdk-tiers.md), and the [Anthropic SDK overview](https://platform.claude.com/docs/en/api/client-sdks.md). Tiers and SDK lists change; re-check before deciding.
-- **Secondary sources (not verified against primary sources):** Codex's rewrite reasons; Microsoft Agent Framework 1.0 dates; ADK language and version claims; Spring AI 2.0 and LangChain4j dates; Rust and Go framework maturity; Python 3.14 free-threading details beyond the PEP 779 status. Verify before you cite them.
+- **Framework facts** (versions, dates, status) were re-read from package registries and official pages on 2026-11-19 for the [framework profiles](../frameworks/README.md); the Java, Go and Rust frameworks were not compiled or run. **Still secondary:** Codex's rewrite reasons; Python 3.14 free-threading details beyond the PEP 779 status. Verify before you cite them.
 - **General engineering knowledge** (cells marked "g") reflects widely held practice and was not rechecked in this session.
 - **Selection bias in the evidence:** eleven open-source coding agents are a sample of one community. Closed products and non-coding agents are underrepresented.
 - **No measurements.** See Section 9.
@@ -256,6 +256,7 @@ The stub makes the model's latency a controlled variable, so what remains is the
 
 ## Related reading in this repository
 
+- [Agent frameworks compared for implementers](../frameworks/README.md) and the [selection method](../../architecture-evolution/language-and-framework-selection.md)
 - [Stage brief: agent systems](../../llm-learning-repository/tutorials/06-agent-systems/README.md): the five separately-evidenced claims about thin runtimes and tool counts
 - [Dive into Claude Code](../../llm-learning-repository/tutorials/06-agent-systems/28-dive-into-claude-code.md) and [Harness Engineering](../../llm-learning-repository/tutorials/06-agent-systems/29-harness-engineering.md): the evidence about what a runtime contains
 - [CodeAct](../../llm-learning-repository/tutorials/06-agent-systems/25-codeact.md): code as the action format, which also shapes the sandbox decision

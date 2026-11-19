@@ -221,7 +221,7 @@ Mastra can also serve its agents, tools and workflows as an MCP server (`MCPServ
 
 **Against writing the loop yourself.** The 100-line reference loop gives you full control of the log format and permission flow. Mastra buys the surrounding product: storage schema, memory strategies, snapshot-based suspend and resume across processes [ran], MCP in and out, evals, observability and a server. It costs a large dependency tree, a framework-owned persistence model, and a fast-moving surface. If your need is agent plus tools plus conversation memory in a service, Mastra saves weeks. If your need is a runtime whose loop and log are the product, it saves little and constrains you.
 
-**TypeScript in coding-agent harnesses.** The [Harness Engineering guide](../../llm-learning-repository/tutorials/06-agent-systems/29-harness-engineering.md) records TypeScript in five of eleven studied coding-agent harnesses. I have no evidence that those harnesses use Mastra, and I make no claim that they do [unverified]. What the fact supports is that a TypeScript runtime is mainstream; it says nothing about this framework.
+**TypeScript in coding-agent harnesses.** The [Harness Engineering guide](../../../llm-learning-repository/tutorials/06-agent-systems/29-harness-engineering.md) records TypeScript in five of eleven studied coding-agent harnesses. I have no evidence that those harnesses use Mastra, and I make no claim that they do [unverified]. What the fact supports is that a TypeScript runtime is mainstream; it says nothing about this framework.
 
 ## What was verified
 
