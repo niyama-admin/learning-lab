@@ -477,6 +477,11 @@ for (const paper of selected) {
     text += workbook;
   }
   if (text.length < 35_000) throw new Error(`${paper.id} rendered only ${text.length} characters`);
-  fs.writeFileSync(path.join(root, paper.tutorial), text);
+  const target = path.join(root, paper.tutorial);
+  if (fs.existsSync(target) && /^---\nformat:\s*v2\s*\n/.test(fs.readFileSync(target, "utf8")) && !process.argv.includes("--overwrite-v2")) {
+    console.log(`${paper.id}: skipped (v2 guide; pass --overwrite-v2 to replace it with the legacy template)`);
+    continue;
+  }
+  fs.writeFileSync(target, text);
   console.log(`${paper.id}: wrote ${text.length} characters`);
 }

@@ -16,19 +16,21 @@ Before each stage, consult the [prerequisite map](references/prerequisite-map.md
 
 The [weekly knowledge workflow](references/weekly-curation-workflow.md) runs every Saturday, selects up to one new arXiv paper for each curriculum category, creates a Monday-Friday study plan with three-level tutorials, downloads and verifies the PDFs, and opens a review PR. Browse accepted additions in [weekly/](weekly/README.md).
 
-## Tutorial quality standard
+## Guide standard (format v2)
 
-Every completed paper guide is intended to replace a first reading of the source at three levels: a self-contained intuitive explanation, an implementation-oriented practitioner treatment, and a formal researcher treatment. Guides include paper-specific findings and limitations, diagrams, equations where needed, and an appendix that teaches at least six paper-specific prerequisites with worked examples and references restricted to the vetted shelf. `build-guides.mjs` preserves enriched tutorials unless explicitly invoked with `--force-tutorials`.
+All 31 guides use **format v2** (front matter `format: v2`), written to the rules in [references/guide-authoring-spec-v2.md](references/guide-authoring-spec-v2.md) and enforced by `node verify-v2-guides.mjs`. The aim is that a reader can finish a guide able to explain the idea, build a small version and critique the evidence **without opening the PDF to fill gaps**. Each guide:
 
-The checked-in core corpus was rendered locally from reviewed, paper-specific profiles. Regenerate papers 2-23 without a hosted model or API key with `node render-local-tutorials.mjs`, then run `node verify-repository.mjs` and `node verify-detailed-tutorials.mjs`. The separate core-enrichment GitHub workflow is manual-only and is not part of local generation; do not dispatch it when the local renderer is the intended path.
+- traces one real example from the paper (constructed examples are labelled);
+- defines every term before use;
+- explains each result in plain words: what is counted, against what, and what a change of that size means;
+- gives three levels (intuitive, practitioner, researcher) that add content rather than repeat it;
+- maps the paper section by section (read, skim or skip) and answers the questions readers actually get stuck on;
+- teaches only the prerequisites that paper uses, with a tiny worked example each;
+- separates what the paper reports from what the guide infers, and lists inconsistencies found inside the paper rather than silently correcting them.
+
+**How these were checked, and the limits.** Every number was checked against the arXiv HTML rendering of the paper, because PDFs could not be rendered in the authoring environment; each guide names the version it followed, and section or table numbers follow that rendering and may differ from the local PDF. Figure images were often unreadable, so numbers that exist only in figures are not quoted. A human pass against the PDFs is still worthwhile, especially for the 2025-2026 preprints in stage 06.
 
 PDFs live in `papers/`; metadata and canonical URLs live in [manifest.csv](manifest.csv). Re-download deterministically with `node download-papers.mjs`.
-
-## Guide formats
-
-Guides 10 and 24-31 use **format v2** (front matter `format: v2`). Each traces one real example from the paper, defines every term before use, explains each result in plain words, maps the PDF section by section, answers the questions readers actually get stuck on, and teaches only the prerequisites the paper needs. The rules are in [references/guide-authoring-spec-v2.md](references/guide-authoring-spec-v2.md) and are enforced by `node verify-v2-guides.mjs`.
-
-The remaining v1 guides (papers 1-9 and 11-23) predate that standard and are checked by `node verify-detailed-tutorials.mjs`. They are scheduled for rewrite in v2; do not run `render-local-tutorials.mjs` over a v2 guide.
 
 ## Curriculum
 
@@ -118,6 +120,6 @@ This is a curated foundation, not a claim that benchmark scores equal usefulness
 - `references/`: mathematics, experiments, protocols, glossary, and note templates
 - `manifest.csv`: machine-readable bibliography and paths
 - `download-papers.mjs`: checksum-friendly downloader
-- `render-local-tutorials.mjs`: deterministic, no-API local renderer for the reviewed core profiles
+- `render-local-tutorials.mjs`: legacy v1 renderer; skips v2 guides unless `--overwrite-v2` is passed (do not)
 - `verify-repository.mjs`: completeness and PDF signature checks
-- `verify-v2-guides.mjs`: structural and anti-boilerplate checks for v2 guides
+- `verify-v2-guides.mjs`: structural and anti-boilerplate checks for v2 guides (also used by the compute collection)
