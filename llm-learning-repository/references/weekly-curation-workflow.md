@@ -8,7 +8,7 @@ flowchart LR
   F --> D[Remove known paper IDs]
   D --> R[Rank within 5 categories]
   R --> S[Select at most 1 per category]
-  S --> G[Generate 3-level tutorials]
+  S --> G[Generate v2 guides]
   G --> P[Download PDFs and checksums]
   P --> V[Validate]
   V --> PR[Human-reviewed pull request]
@@ -65,4 +65,11 @@ The job used to abort the whole week when any single model call or quality check
 
 Scheduled workflows are disabled by GitHub after 60 days without repository activity. If it happens again, re-enable with `gh workflow enable "Weekly LLM knowledge update"`.
 
-The generated weekly guides are drafts in the older three-level format, written by an open model from the paper text. They are not held to the v2 standard in [guide-authoring-spec-v2.md](guide-authoring-spec-v2.md).
+## Guide generation (format v2)
+
+Weekly guides are written in the v2 format of [guide-authoring-spec-v2.md](guide-authoring-spec-v2.md) by `tutorial-authoring-v2.mjs`. The older generator wrote the three-level template and replaced the model's prerequisites with six fixed templates written for the Transformer paper, so it could not produce a guide that passes `verify-v2-guides.mjs`.
+
+- **Six parts**, each with exact headings and checks (opening and worked example; words and Tutorial 1; Tutorial 2; Tutorial 3; reading map and FAQ; prerequisites, curriculum and checkpoint). The worked example is passed to later parts so they stay consistent. Each part gets three attempts, and accepted parts are cached.
+- **Gates.** The assembled guide is verified with the repository's v2 verifier. Missing headings, a missing diagram, a too-short guide or a too-short worked example skip the paper (listed in `SKIPPED.md`). Softer problems (repeated sentences, too few answer blocks, glossary or FAQ counts) publish with a visible `REVIEW NEEDED` banner.
+- **What the gates cannot do.** They check structure, not whether numbers are right. Every weekly guide carries a draft banner saying so. Check figures against the PDF, or rewrite the guide with the authoring spec, before relying on it.
+- **First real run.** `node test-weekly-v2.mjs` proves the plumbing against a stub model, not what a real model writes. Run the workflow once with `max_papers` set to `1` and read the guide before leaving it on the schedule.

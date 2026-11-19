@@ -10,6 +10,10 @@ on:
         description: "Optional UTC date (YYYY-MM-DD); defaults to today"
         required: false
         type: string
+      max_papers:
+        description: "Optional limit on papers authored (use 1 for a cheap first run); blank means all selected"
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -23,7 +27,7 @@ jobs:
   curate:
     runs-on: ubuntu-latest
     environment: production
-    timeout-minutes: 240
+    timeout-minutes: 345
     env:
       MODEL_ACCESS_KEY: ${{ secrets.MODEL_ACCESS_KEY }}
       DIGITALOCEAN_MODEL_ID: ${{ vars.DIGITALOCEAN_MODEL_ID }}
@@ -41,11 +45,12 @@ jobs:
       - name: Install PDF text extraction
         run: sudo apt-get update && sudo apt-get install -y poppler-utils
 
-      - name: Offline self-tests (model client retries, per-paper failure isolation)
+      - name: Offline self-tests (model client retries, per-paper failure isolation, v2 guide generation)
         working-directory: llm-learning-repository
         run: |
           node weekly-update.mjs --self-test
           node test-weekly-resilience.mjs
+          node test-weekly-v2.mjs
 
       - name: Default pull request body
         run: printf 'Automated Saturday intake from arXiv. Requires human review; this workflow never auto-merges.\n' > "$WEEKLY_PR_BODY_PATH"
@@ -61,7 +66,7 @@ jobs:
       - name: Fetch, select, summarize, and download
         id: curate
         working-directory: llm-learning-repository
-        run: node weekly-update.mjs ${{ inputs.week_ending && format('--week-ending={0}', inputs.week_ending) || '' }}
+        run: node weekly-update.mjs ${{ inputs.week_ending && format('--week-ending={0}', inputs.week_ending) || '' }} ${{ inputs.max_papers && format('--max-papers={0}', inputs.max_papers) || '' }}
 
       - name: Save cached chapter parts
         if: always()
