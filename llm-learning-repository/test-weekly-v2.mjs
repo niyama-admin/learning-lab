@@ -43,6 +43,7 @@ const PARTS = {
 let respond = ({ part }) => PARTS[part];
 const seen = [];
 const server = http.createServer((req, res) => {
+  if (req.method === "GET") { res.writeHead(404, { "Content-Type": "application/json" }); return res.end("{}"); } // no model listing: built-in candidates
   let data = "";
   req.on("data", c => (data += c));
   req.on("end", () => {

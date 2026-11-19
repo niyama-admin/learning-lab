@@ -62,6 +62,8 @@ export function outputText(json) {
 
 let resolvedModel;
 let lastModelSuccessAt = 0;
+// Last-resort candidates. Hosted model names change without notice (all four of these returned 404 "model not found" on
+// 2026-11-19), so the client asks the API which models the key can use (GET /models) and ranks those instead.
 const defaultModelCandidates = [
   "llama-4-maverick",
   "kimi-k2.5",
@@ -69,10 +71,56 @@ const defaultModelCandidates = [
   "deepseek-4-flash"
 ];
 
-// Models whose serverless endpoint is /chat/completions. Learned at run time as well: a model that answers
-// 404 "not a responses model" is retried on /chat/completions and remembered (this was failing every week).
-const chatCompletionsPattern = /^(llama|qwen|alibaba-|deepseek-|mistral|kimi)/;
-const learnedChatModels = new Set();
+// Chat completions is the common endpoint. A model that answers 404 "not a responses model" is already handled by
+// switching the other way; names are only listed here when /responses is known to be the right default.
+const learnedEndpoint = new Map(); // model -> "chat" | "responses"
+
+// Discovery: never use these (not text-generation models), and by default skip proprietary frontier families because
+// the curriculum's goal is open models. Set TUTORIAL_ALLOW_PROPRIETARY=1 to include them.
+const NON_CHAT = /embed|rerank|whisper|tts|speech|audio|image|flux|stable|sdxl|diffusion|wan2|vision-only|moderation|guard|ocr|^router:|typesafe|(^|[-_])(bge|e5|gte|mpnet|minilm|mini-lm)([-_]|$)/i;
+// Proprietary frontier families: every anthropic/claude/openai model except the open-weights gpt-oss, plus Gemini and
+// anything named "max" (hosted-only flagships).
+const isProprietary = id => /^(anthropic|claude)/i.test(id) || /^openai-(?!gpt-oss)/i.test(id) || /gemini|fable/i.test(id) || /(^|[-_])max($|[-_])/i.test(id);
+// Family preference, strongest first. Judgement, not measurement: large open models with long context and reliable
+// instruction following. Tune with evidence from real runs; pin one with DIGITALOCEAN_MODEL_ID to override.
+const PREFERENCE = [/deepseek.*pro/i, /kimi.*(k3|pro)/i, /glm-?5/i, /gpt-oss-120b/i, /minimax/i, /deepseek/i, /kimi/i, /qwen/i, /llama/i, /mistral|mixtral/i, /nemotron/i, /gemma/i, /mimo/i, /glm/i, /arcee|reflection/i];
+const SMALL = /(^|[-_])(mini|nano|small|tiny|lite|flash|haiku|[1-9]b|1[0-9]b|[1-9]\.[0-9]b)([-_.]|$)/i;
+const VISION_OR_THINKING = /(^|[-_])(vl|thinking)([-_]|$)/i;
+
+export function rankDiscoveredModels(ids, { allowProprietary = false } = {}) {
+  const usable = ids.filter(id => !NON_CHAT.test(id) && (allowProprietary || !isProprietary(id)));
+  const score = id => {
+    const tier = PREFERENCE.findIndex(rx => rx.test(id));
+    return (tier < 0 ? PREFERENCE.length + 1 : tier) + (SMALL.test(id) ? 20 : 0) + (VISION_OR_THINKING.test(id) ? 5 : 0);
+  };
+  return usable.map((id, index) => ({ id, index, score: score(id) })).sort((x, y) => x.score - y.score || x.index - y.index).map(x => x.id);
+}
+
+let discovered; // { ids: string[], at: number } | { error: string }
+async function discoverModels(baseUrl, timeoutMs) {
+  if (discovered) return discovered;
+  try {
+    const response = await fetch(`${baseUrl}/models`, { headers: { "Authorization": `Bearer ${process.env.MODEL_ACCESS_KEY}` }, signal: AbortSignal.timeout(Math.min(timeoutMs, 60_000)) });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const json = await response.json();
+    const ids = (json.data ?? json.models ?? []).map(m => (typeof m === "string" ? m : m.id ?? m.name ?? m.uuid)).filter(Boolean);
+    discovered = { ids };
+    console.log(`DigitalOcean models available to this key (${ids.length}): ${ids.join(", ") || "none"}`);
+  } catch (error) {
+    discovered = { error: String(error.message ?? error) };
+    console.warn(`Could not list models (${discovered.error}); using the built-in candidate list`);
+  }
+  return discovered;
+}
+export function resetModelDiscovery() { discovered = undefined; resolvedModel = undefined; learnedEndpoint.clear(); }
+
+function candidateOrder(configured) {
+  if (configured) return [configured];
+  const fromApi = discovered?.ids ? rankDiscoveredModels(discovered.ids, { allowProprietary: process.env.TUTORIAL_ALLOW_PROPRIETARY === "1" }) : [];
+  // Built-in names first only if the API confirms them; otherwise trust the API list; if listing failed, use built-ins.
+  const base = discovered?.ids ? fromApi : defaultModelCandidates;
+  return resolvedModel ? [resolvedModel, ...base.filter(model => model !== resolvedModel)] : base;
+}
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const intFromEnv = (name, fallback) => {
@@ -105,16 +153,13 @@ export async function createModelResponse(input) {
   const configured = process.env.DIGITALOCEAN_MODEL_ID?.trim();
   const failures = [];
   const unavailableModels = new Set();
+  if (!configured) await discoverModels(baseUrl, timeoutMs);
   for (let round = 1; round <= rounds; round++) {
-    const ordered = configured
-      ? [configured]
-      : resolvedModel
-        ? [resolvedModel, ...defaultModelCandidates.filter(model => model !== resolvedModel)]
-        : defaultModelCandidates;
-    const candidates = ordered.filter(model => !unavailableModels.has(model));
+    const candidates = candidateOrder(configured).filter(model => !unavailableModels.has(model));
     if (!candidates.length) break;
     for (const model of candidates) {
-      let useChat = learnedChatModels.has(model) || chatCompletionsPattern.test(model);
+      let useChat = (learnedEndpoint.get(model) ?? "chat") === "chat";
+      let endpointSwitches = 0;
       for (let attempt = 1; attempt <= attemptsPerModel; attempt++) {
         const endpoint = useChat ? "chat/completions" : "responses";
         let response;
@@ -141,7 +186,7 @@ export async function createModelResponse(input) {
           const text = outputText(json);
           if (text?.trim()) {
             resolvedModel = model;
-            if (useChat) learnedChatModels.add(model);
+            learnedEndpoint.set(model, useChat ? "chat" : "responses");
             lastModelSuccessAt = Date.now();
             console.log(`DigitalOcean model: ${model}`);
             return json;
@@ -153,11 +198,15 @@ export async function createModelResponse(input) {
         }
         const detail = (await response.text()).slice(0, 500);
         failures.push(`${model}: HTTP ${response.status} ${detail}`);
-        if (response.status === 404 && /not a responses model/i.test(detail) && !useChat) {
+        // A wrong endpoint is not a failed attempt. Switch once, in whichever direction the error indicates.
+        if (endpointSwitches === 0 && !useChat && response.status === 404 && /not a responses model/i.test(detail)) {
           console.warn(`${model}: not a /responses model; switching to /chat/completions`);
-          useChat = true;
-          learnedChatModels.add(model);
-          attempt--; // a wrong endpoint is not a failed attempt
+          useChat = true; endpointSwitches++; attempt--;
+          continue;
+        }
+        if (endpointSwitches === 0 && useChat && [400, 404].includes(response.status) && /responses (api|endpoint)|use .?\/?responses|not a chat|chat completions? (is )?not (supported|available)/i.test(detail)) {
+          console.warn(`${model}: not a chat-completions model; switching to /responses`);
+          useChat = false; endpointSwitches++; attempt--;
           continue;
         }
         if (isTransientStatus(response.status)) {
@@ -184,7 +233,8 @@ export async function createModelResponse(input) {
       await sleep(delayMs);
     }
   }
-  throw new Error(`No candidate DigitalOcean serverless model is available: ${failures.slice(-8).join(" | ")}`);
+  const listed = discovered?.ids ? `Models the key can list (${discovered.ids.length}): ${discovered.ids.join(", ")}.` : `Model listing failed (${discovered?.error ?? "not attempted"}).`;
+  throw new Error(`No candidate DigitalOcean serverless model is available. ${listed} To pin one, set the repository variable DIGITALOCEAN_MODEL_ID. Failures: ${failures.slice(-6).join(" | ")}`);
 }
 
 function referenceBlockCount(text) {

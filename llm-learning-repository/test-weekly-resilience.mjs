@@ -5,6 +5,7 @@ import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "weekly-resilience-"));
 process.env.LEARNING_REPO_ROOT = tmp;
@@ -19,11 +20,18 @@ process.env.TUTORIAL_REQUEST_TIMEOUT_MS = "150";
 
 // ---- stub inference server -------------------------------------------------------------------------------------
 let behaviour = () => ({ status: 200, body: { choices: [{ message: { content: "ok" } }] } });
+// GET /v1/models: by default the API does not support listing, so the client falls back to its built-in candidates.
+let modelsResponse = () => ({ status: 404, body: { error: "no models endpoint" } });
 const calls = [];
 const server = http.createServer((req, res) => {
   let data = "";
   req.on("data", chunk => (data += chunk));
   req.on("end", () => {
+    if (req.method === "GET" && req.url.endsWith("/models")) {
+      const listed = modelsResponse();
+      res.writeHead(listed.status, { "Content-Type": "application/json" });
+      return res.end(JSON.stringify(listed.body));
+    }
     const body = JSON.parse(data || "{}");
     calls.push({ url: req.url, model: body.model });
     const result = behaviour({ url: req.url, model: body.model, n: calls.length });
@@ -35,10 +43,10 @@ const server = http.createServer((req, res) => {
 await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
 process.env.DIGITALOCEAN_BASE_URL = `http://127.0.0.1:${server.address().port}/v1`;
 
-const { createModelResponse } = await import("./tutorial-authoring.mjs");
+const { createModelResponse, resetModelDiscovery, rankDiscoveredModels } = await import("./tutorial-authoring.mjs");
 const { generate } = await import("./weekly-update.mjs");
 const okBody = text => ({ status: 200, body: { choices: [{ message: { content: text } }] } });
-const reset = () => { calls.length = 0; };
+const reset = () => { calls.length = 0; resetModelDiscovery(); modelsResponse = () => ({ status: 404, body: { error: "no models endpoint" } }); };
 
 // 1. A model that hangs twice and then answers is retried on the same model, not abandoned.
 reset();
@@ -55,15 +63,48 @@ json = await createModelResponse("prompt");
 assert.match(json.choices[0].message.content, /from kimi-k2\.5/);
 console.log("ok  persistent 5xx moves on to the next model");
 
-// 3. 404 "not a responses model" switches endpoint instead of failing (this failed every week in production).
+// 3. Chat completions is the default; a model that only supports /responses is switched to it, once, and remembered.
 reset();
 process.env.DIGITALOCEAN_MODEL_ID = "mystery-model";
-behaviour = ({ url }) => (url.endsWith("/responses") ? { status: 404, body: { error: { message: "this model is not a responses model" } } } : okBody("via chat"));
+behaviour = ({ url }) => (url.endsWith("/chat/completions") ? { status: 400, body: { error: { message: "this model only supports the Responses API" } } } : { status: 200, body: { output_text: "via responses" } });
 json = await createModelResponse("prompt");
-assert.equal(json.choices[0].message.content, "via chat");
-assert.ok(calls.some(c => c.url.endsWith("/responses")) && calls.some(c => c.url.endsWith("/chat/completions")));
+assert.equal(json.output_text, "via responses");
+assert.ok(calls[0].url.endsWith("/chat/completions") && calls[1].url.endsWith("/responses"), "tried chat first, then switched");
+reset(); // clears learned endpoints too, so re-learn: second call should go straight to /responses
+behaviour = ({ url }) => (url.endsWith("/chat/completions") ? { status: 400, body: { error: { message: "this model only supports the Responses API" } } } : { status: 200, body: { output_text: "via responses" } });
+await createModelResponse("prompt"); calls.length = 0; await createModelResponse("prompt again");
+assert.equal(calls.length, 1, "learned endpoint reused without another failed attempt");
+assert.ok(calls[0].url.endsWith("/responses"));
 delete process.env.DIGITALOCEAN_MODEL_ID;
-console.log("ok  not-a-responses-model falls back to /chat/completions");
+console.log("ok  an endpoint mismatch switches once, in either direction, and is remembered");
+
+// 3b. Discovery: the API's own model list is used and ranked; non-chat and proprietary models are never requested.
+reset();
+modelsResponse = () => ({ status: 200, body: { data: [{ id: "text-embedding-3-large" }, { id: "anthropic-claude-4-sonnet" }, { id: "qwen3-8b-instruct" }, { id: "llama-3.3-70b-instruct" }, { id: "whisper-large" }, { id: "qwen3-235b-a22b" }] } });
+behaviour = ({ model }) => ({ status: 200, body: { choices: [{ message: { content: `from ${model}` } }] } });
+json = await createModelResponse("prompt");
+assert.equal(json.choices[0].message.content, "from qwen3-235b-a22b", "highest-ranked usable model is used first");
+assert.ok(!calls.some(c => /embedding|claude|whisper/.test(c.model)), "non-chat and proprietary models are never requested");
+assert.deepEqual(rankDiscoveredModels(["qwen3-8b-instruct", "qwen3-235b-a22b", "llama-3.3-70b-instruct", "anthropic-claude-4-sonnet", "text-embedding-3-large"]), ["qwen3-235b-a22b", "llama-3.3-70b-instruct", "qwen3-8b-instruct"], "large models rank above small ones; embedding and proprietary excluded");
+assert.ok(rankDiscoveredModels(["anthropic-claude-4-sonnet", "qwen3-235b-a22b"], { allowProprietary: true }).includes("anthropic-claude-4-sonnet"), "proprietary allowed on request");
+// Regression on the real list the API returned on 2026-11-19 (all four built-in names had disappeared from it).
+const real = JSON.parse(fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "test-fixtures/digitalocean-models-2026-11-19.json"), "utf8")).ids;
+const ranked = rankDiscoveredModels(real);
+assert.ok(ranked.length >= 10, "a usable pool remains");
+assert.ok(ranked.every(id => !/^(anthropic|openai-(?!gpt-oss))|embed|rerank|^router:|image|tts|stable|wan2|bge|e5-|gte-|mpnet|minilm/.test(id)), "no proprietary, embedding, router, image or speech models");
+assert.match(ranked[0], /deepseek.*pro/, "a large open model ranks first");
+assert.ok(ranked.indexOf("deepseek-v4.1-flash") > ranked.indexOf("deepseek-v4-pro"), "flash variants rank below pro");
+assert.ok(!["llama-4-maverick", "kimi-k2.5", "qwen3.5-397b-a17b", "deepseek-4-flash"].some(id => real.includes(id)), "documents why the built-in names failed");
+console.log("ok  discovered models are ranked; non-chat and proprietary models are skipped");
+
+// 3c. If the listed models all fail, the error names them so the operator knows what to configure.
+reset();
+modelsResponse = () => ({ status: 200, body: { data: [{ id: "llama-3.3-70b-instruct" }] } });
+process.env.TUTORIAL_MODEL_ROUNDS = "1";
+behaviour = () => ({ status: 404, body: { error: { message: "model not found" } } });
+await assert.rejects(createModelResponse("prompt"), err => /Models the key can list \(1\): llama-3\.3-70b-instruct/.test(err.message) && /DIGITALOCEAN_MODEL_ID/.test(err.message));
+delete process.env.TUTORIAL_MODEL_ROUNDS;
+console.log("ok  when every model fails, the error lists the models the key can see");
 
 // 4. Everything failing eventually throws a clear error (bounded, not an endless loop).
 reset();
