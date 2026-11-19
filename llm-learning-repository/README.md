@@ -1,6 +1,6 @@
 # LLM learning repository
 
-A methodical path from non-technical intuition to practitioner competence and research literacy. The collection contains 23 primary papers in reading order. Every companion guide has three independent passes: intuitive, practitioner, and researcher.
+A methodical path from non-technical intuition to practitioner competence and research literacy. The collection contains 31 primary papers in reading order. Every companion guide has three independent passes: intuitive, practitioner, and researcher.
 
 ## How to use it
 
@@ -23,6 +23,12 @@ Every completed paper guide is intended to replace a first reading of the source
 The checked-in core corpus was rendered locally from reviewed, paper-specific profiles. Regenerate papers 2-23 without a hosted model or API key with `node render-local-tutorials.mjs`, then run `node verify-repository.mjs` and `node verify-detailed-tutorials.mjs`. The separate core-enrichment GitHub workflow is manual-only and is not part of local generation; do not dispatch it when the local renderer is the intended path.
 
 PDFs live in `papers/`; metadata and canonical URLs live in [manifest.csv](manifest.csv). Re-download deterministically with `node download-papers.mjs`.
+
+## Guide formats
+
+Guides 10 and 24-31 use **format v2** (front matter `format: v2`). Each traces one real example from the paper, defines every term before use, explains each result in plain words, maps the PDF section by section, answers the questions readers actually get stuck on, and teaches only the prerequisites the paper needs. The rules are in [references/guide-authoring-spec-v2.md](references/guide-authoring-spec-v2.md) and are enforced by `node verify-v2-guides.mjs`.
+
+The remaining v1 guides (papers 1-9 and 11-23) predate that standard and are checked by `node verify-detailed-tutorials.mjs`. They are scheduled for rewrite in v2; do not run `render-local-tutorials.mjs` over a v2 guide.
 
 ## Curriculum
 
@@ -84,6 +90,23 @@ What controlled and field studies say about business productivity.
 | 22 | [The Impact of AI on Developer Productivity: Evidence from GitHub Copilot](tutorials/05-small-business/22-productivity.md) | arXiv:2302.06590 |
 | 23 | [Generative AI at Work](tutorials/05-small-business/23-customer-support.md) | arXiv:2304.11771 |
 
+### 06-agent-systems
+
+How assistants such as Claude Code are built: tools, the harness around the model, and context management. Start with the [stage brief](tutorials/06-agent-systems/README.md); read [ReAct](tutorials/02-building/10-react.md) first.
+
+| Order | Guide | Source |
+|---:|---|---|
+| 24 | [Toolformer: Language Models Can Teach Themselves to Use Tools](tutorials/06-agent-systems/24-toolformer.md) | arXiv:2302.04761 |
+| 25 | [Executable Code Actions Elicit Better LLM Agents](tutorials/06-agent-systems/25-codeact.md) | arXiv:2402.01030 |
+| 26 | [SWE-agent: Agent-Computer Interfaces Enable Automated Software Engineering](tutorials/06-agent-systems/26-swe-agent.md) | arXiv:2405.15793 |
+| 27 | [Agentic Tool Use in Large Language Models](tutorials/06-agent-systems/27-agentic-tool-use-survey.md) | arXiv:2604.00835 |
+| 28 | [Dive into Claude Code: The Design Space of Today's and Future AI Agent Systems](tutorials/06-agent-systems/28-dive-into-claude-code.md) | arXiv:2604.14228 |
+| 29 | [Harness Engineering: Anatomy, Architecture, and Evolution of Coding Agents](tutorials/06-agent-systems/29-harness-engineering.md) | arXiv:2609.00006 |
+| 30 | [Context as a Tool: Context Management for Long-Horizon SWE-Agents](tutorials/06-agent-systems/30-context-as-a-tool.md) | arXiv:2512.22087 |
+| 31 | [Agentic Context Engineering: Evolving Contexts for Self-Improving Language Models](tutorials/06-agent-systems/31-agentic-context-engineering.md) | arXiv:2510.04618 |
+
+Papers 28-31 are 2025-2026 preprints; the guides say where evidence is thin.
+
 ## Scope and cautions
 
 This is a curated foundation, not a claim that benchmark scores equal usefulness or that multi-agent systems always beat one good agent. MCP and A2A evolve as specifications, so the arXiv survey is paired with official live references. The business studies concern specific software-development and support settings; use them as evidence for pilot design, not as guaranteed ROI for every small business.
@@ -97,3 +120,4 @@ This is a curated foundation, not a claim that benchmark scores equal usefulness
 - `download-papers.mjs`: checksum-friendly downloader
 - `render-local-tutorials.mjs`: deterministic, no-API local renderer for the reviewed core profiles
 - `verify-repository.mjs`: completeness and PDF signature checks
+- `verify-v2-guides.mjs`: structural and anti-boilerplate checks for v2 guides
