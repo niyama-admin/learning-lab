@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
+import { isV2, v2Problems } from "../llm-learning-repository/verify-v2-guides.mjs";
 
 const root = path.dirname(new URL(import.meta.url).pathname.replace(/^\/(.:)/, "$1"));
 const rows = fs.readFileSync(path.join(root, "manifest.csv"), "utf8").trim().split(/\r?\n/).slice(1);
@@ -15,6 +16,7 @@ function parseCsv(line) {
   cells.push(value); return cells;
 }
 const tutorials = new Set();
+const sourcesByTutorial = new Map();
 const hashes = new Map();
 let failed = false;
 for (const row of rows) {
@@ -22,6 +24,7 @@ for (const row of rows) {
   const [, , id, , , kind, local, url, tutorial] = cells;
   if (!url.startsWith("https://")) { console.error(`${id}: invalid canonical URL`); failed = true; }
   tutorials.add(tutorial);
+  sourcesByTutorial.set(tutorial, [...(sourcesByTutorial.get(tutorial) ?? []), { id, url }]);
   if (kind !== "live-spec") {
     const file = path.join(root, local);
     if (!fs.existsSync(file)) { console.error(`${id}: missing ${local}`); failed = true; continue; }
@@ -34,6 +37,11 @@ for (const relative of tutorials) {
   const file = path.join(root, relative);
   if (!fs.existsSync(file)) { console.error(`missing tutorial ${relative}`); failed = true; continue; }
   const text = fs.readFileSync(file, "utf8");
+  if (isV2(text)) {
+    const problems = v2Problems(text, null, { kind: "compute", sources: sourcesByTutorial.get(relative) });
+    if (problems.length) { console.error(`${relative}:\n  - ${problems.join("\n  - ")}`); failed = true; }
+    continue;
+  }
   for (const heading of ["## Tutorial 1 - Intuitive understanding", "## Tutorial 2 - Practitioner understanding", "## Tutorial 3 - Researcher understanding", "## Appendix - Prerequisites", "```mermaid"])
     if (!text.includes(heading)) { console.error(`${relative}: missing ${heading}`); failed = true; }
   if (text.length < 14_000) { console.error(`${relative}: only ${text.length} characters`); failed = true; }
