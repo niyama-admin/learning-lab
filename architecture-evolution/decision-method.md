@@ -162,6 +162,10 @@ Use three review modes:
 - **Triggered**: an agreed threshold, incident, policy change, or new workload opens a review.
 - **Scheduled**: review expensive or long-lived decisions even when no trigger fires.
 
+## 10. Special case: implementation languages and agent frameworks
+
+The capacity profiles in Section 3 do not separate programming languages or agent frameworks, and the evidence for them expires quickly. For that decision use the [language and framework selection method](language-and-framework-selection.md). It keeps the gates, evidence register and triggers above, replaces the capacity profile with a deployment shape, adds a time-boxed spike against a reference task, shortens evidence validity to 90 days for framework and SDK status, and makes the choice reversible through three seams (loop specification, tools behind MCP, model behind HTTP).
+
 ## Minimum decision dataset
 
 The interactive blueprint should eventually load a versioned dataset with these entities:
