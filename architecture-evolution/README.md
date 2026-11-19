@@ -9,6 +9,7 @@ The method is customer-neutral. Each engagement supplies its own workloads, cons
 ## Assets
 
 - [Decision method](decision-method.md): the repeatable process, evidence model, scoring model, and governance cycle.
+- [Language and framework selection](language-and-framework-selection.md): the decision method applied to choosing an agent runtime's implementation language and framework, with a spike protocol, evidence expiry, reversibility seams and dated defaults.
 - [Interactive architecture blueprint](blueprint/README.md): a clickable generic application architecture with scale, reliability, and latency filters.
 - [Blueprint application](blueprint/index.html): the standalone interactive view.
 - [Live architecture blueprint](https://niyama-admin.github.io/consulting/architecture-blueprint/): the GitHub Pages deployment from the default branch.
