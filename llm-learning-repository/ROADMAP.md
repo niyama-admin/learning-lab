@@ -1,6 +1,6 @@
 # Methodical learning roadmap
 
-Plan for 12 weeks at 6-8 hours per week. A faster reader can compress it, but preserve the order and checkpoints.
+Plan for 12 weeks at 6-8 hours per week, plus a 3-week agent-systems extension (weeks 13-15). A faster reader can compress it, but preserve the order and checkpoints.
 
 | Weeks | Papers | Intuition outcome | Practitioner artifact | Research artifact |
 |---|---:|---|---|---|
@@ -11,6 +11,9 @@ Plan for 12 weeks at 6-8 hours per week. A faster reader can compress it, but pr
 | 9-10 | 17-21 | Explain roles, channels, swarms, MCP, and A2A | Two-agent workflow with typed messages, approval, and audit trail | Single-agent control, topology ablation, and threat model |
 | 11 | 22-23 | Explain measured productivity versus marketing claims | Small-business pilot design with baseline and stop criteria | Causal diagram and external-validity critique |
 | 12 | all | Teach the whole stack end to end | Capstone, evaluation report, and operating runbook | Reproducible research proposal with preregistered hypotheses |
+| 13 | 10, 24-26 | Explain why a model that emits tool calls works, and why the quality of the tools matters as much as the model | Same task run with a JSON-tool agent and a code-action agent, three tool-design variants, scored on a fixed task set | Isolate tool format, tool design and model effects; reproduce one ablation |
+| 14 | 27-29 | Explain what surrounds the loop in a production coding assistant | One-page component inventory of a harness (permissions, compaction, extension, subagents) with an adopt, adapt or skip decision per item | Critique source-code-study methodology and its limits as evidence |
+| 15 | 30-31 | Explain how an agent keeps its working memory useful over a long task | Context budget and condensation policy for a long-running task, with a replayable trace | Design a test that separates condensation quality from model strength |
 
 ## Weekly rhythm
 
