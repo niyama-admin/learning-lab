@@ -16,7 +16,7 @@ The market changes faster than an architecture decision record. This reference t
 
 Machine-readable inventories live in [`data/models.csv`](data/models.csv) and [`data/benchmarks.csv`](data/benchmarks.csv). The curated [source register](sources.md) favors vendor documentation, official model cards, benchmark repositories, and papers.
 
-Run `node llms/market-reference/verify-reference.mjs` from the repository root to check CSV shape, local links, and unfinished placeholders.
+Run `node llms/market-reference/verify-reference.mjs` from the repository root to check CSV shape, local links, and unfinished placeholders. Run `node llms/market-reference/weekly-market-update.mjs --verify` to validate the weekly updater and inventory schema without using inference or the network.
 
 ## Interpretation rules
 
@@ -49,12 +49,17 @@ A public benchmark can support candidate selection. It cannot replace the repres
 
 ## Refresh policy
 
+- A GitHub Actions workflow runs at 10:00 Asia/Kolkata every Saturday and may also be dispatched manually.
+- It compares allow-listed official catalogs, uses DigitalOcean Serverless Inference for structured change extraction, updates `data/models.csv`, and writes an evidence ledger under [`weekly/`](weekly/).
+- It opens or refreshes a review PR only when qualifying changes exist; it never auto-merges.
 - Re-check prices and lifecycle status before every decision; prices in this snapshot are USD list prices, generally per million tokens unless stated otherwise.
 - Preserve old snapshots for auditability instead of silently rewriting historical decisions.
 - Record tokenizer changes because identical text can bill a different token count across model families.
 - Add a model only with an official catalog/model card and a stable identifier.
 - Add a benchmark only when its task, metric, dataset access, and limitations are documented.
 - Re-run workload evaluations after a model alias changes, a prompt or tool changes, or acceptance policy changes.
+
+See [weekly market change reports](weekly/README.md) for reviewer expectations. The automation updates the machine-readable inventory; a reviewer must also update the narrative market table when a new model changes the recommended candidate tiers.
 
 ## A compact decision principle
 

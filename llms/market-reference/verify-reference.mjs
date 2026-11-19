@@ -4,6 +4,12 @@ import { fileURLToPath } from "node:url";
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const errors = [];
+const expectedModelHeaders = [
+  "snapshot_date", "provider", "model_or_family", "access", "license", "modalities",
+  "positioning", "context_tokens", "max_output_tokens", "input_usd_per_million",
+  "cached_input_usd_per_million", "output_usd_per_million", "pricing_qualification",
+  "primary_source", "lifecycle_status", "last_verified_date"
+];
 
 function csvColumns(line) {
   let columns = 1;
@@ -23,6 +29,9 @@ function csvColumns(line) {
 for (const relative of ["data/models.csv", "data/benchmarks.csv"]) {
   const lines = fs.readFileSync(path.join(root, relative), "utf8").trim().split(/\r?\n/);
   const expected = csvColumns(lines[0]);
+  if (relative === "data/models.csv" && lines[0].split(",").join("|") !== expectedModelHeaders.join("|")) {
+    errors.push("data/models.csv has an unexpected header schema");
+  }
   lines.slice(1).forEach((line, index) => {
     const actual = csvColumns(line);
     if (actual !== expected) {
