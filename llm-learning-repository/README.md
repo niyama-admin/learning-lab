@@ -1,6 +1,6 @@
 # LLM learning repository
 
-A methodical path from non-technical intuition to practitioner competence and research literacy. The collection contains 31 primary papers in reading order. Every companion guide has three independent passes: intuitive, practitioner, and researcher.
+A methodical path from non-technical intuition to practitioner competence and research literacy. The collection contains 39 primary papers in reading order. Every companion guide has three independent passes: intuitive, practitioner, and researcher.
 
 ## How to use it
 
@@ -18,7 +18,7 @@ The [weekly knowledge workflow](references/weekly-curation-workflow.md) runs eve
 
 ## Guide standard (format v2)
 
-All 31 guides use **format v2** (front matter `format: v2`), written to the rules in [references/guide-authoring-spec-v2.md](references/guide-authoring-spec-v2.md) and enforced by `node verify-v2-guides.mjs`. The aim is that a reader can finish a guide able to explain the idea, build a small version and critique the evidence **without opening the PDF to fill gaps**. Each guide:
+All 39 guides use **format v2** (front matter `format: v2`), written to the rules in [references/guide-authoring-spec-v2.md](references/guide-authoring-spec-v2.md) and enforced by `node verify-v2-guides.mjs`. The aim is that a reader can finish a guide able to explain the idea, build a small version and critique the evidence **without opening the PDF to fill gaps**. Each guide:
 
 - traces one real example from the paper (constructed examples are labelled);
 - defines every term before use;
@@ -108,6 +108,23 @@ How assistants such as Claude Code are built: tools, the harness around the mode
 | 31 | [Agentic Context Engineering: Evolving Contexts for Self-Improving Language Models](tutorials/06-agent-systems/31-agentic-context-engineering.md) | arXiv:2510.04618 |
 
 Papers 28-31 are 2025-2026 preprints; the guides say where evidence is thin.
+
+### 07-data-agents
+
+How an agent gets accurate, safe answers from an analytics data warehouse (NL2SQL and its enterprise limits). Start with the [stage brief](tutorials/07-data-agents/README.md); the resulting pattern is in [agents/data-access](../agents/data-access/README.md).
+
+| Order | Guide | Source |
+|---:|---|---|
+| 32 | [Can LLM Already Serve as A Database Interface? A BIg Bench for Large-Scale Database Grounded Text-to-SQLs](tutorials/07-data-agents/32-bird.md) | arXiv:2305.03111 |
+| 33 | [A Survey of Text-to-SQL in the Era of LLMs: Where are we, and where are we going?](tutorials/07-data-agents/33-text2sql-survey.md) | arXiv:2408.05109 |
+| 34 | [Spider 2.0: Evaluating Language Models on Real-World Enterprise Text-to-SQL Workflows](tutorials/07-data-agents/34-spider-2.md) | arXiv:2411.07763 |
+| 35 | [ReFoRCE: A Text-to-SQL Agent with Self-Refinement, Consensus Enforcement, and Column Exploration](tutorials/07-data-agents/35-reforce.md) | arXiv:2502.00675 |
+| 36 | [FlexSQL: Flexible Exploration and Execution Make Better Text-to-SQL Agents](tutorials/07-data-agents/36-flexsql.md) | arXiv:2605.02815 |
+| 37 | [Arctic-Text2SQL-R1: Simple Rewards, Strong Reasoning in Text-to-SQL](tutorials/07-data-agents/37-arctic-text2sql-r1.md) | arXiv:2505.20315 |
+| 38 | [BIRD-INTERACT: Re-imagining Text-to-SQL Evaluation for Large Language Models via Lens of Dynamic Interactions](tutorials/07-data-agents/38-bird-interact.md) | arXiv:2510.05318 |
+| 39 | [From Prompt Injections to SQL Injection Attacks: How Protected is Your LLM-Integrated Web Application?](tutorials/07-data-agents/39-prompt-to-sql-injection.md) | arXiv:2308.01990 |
+
+Papers 35-38 are 2025-2026 preprints or very recent venue papers; the guides say where evidence is thin.
 
 ## Scope and cautions
 
