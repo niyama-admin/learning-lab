@@ -132,6 +132,26 @@ console.log("ok  an over-long but valid part is accepted without a retry");
   console.log("ok  en or em dashes in Prerequisite headings are normalised");
 }
 
+// 2e. Cached parts are normalised on reuse. The first verification run reused parts cached before the dash fix existed,
+// so the fix had no effect and the guide kept a spurious "0 prerequisite blocks" note.
+{
+  const cacheDir = fs.mkdtempSync(path.join(os.tmpdir(), "weekly-v2-cache-"));
+  process.env.TUTORIAL_CACHE_DIR = cacheDir;
+  respond = ({ part }) => PARTS[part];
+  await make(); // populates the cache with clean parts
+  const dir = path.join(cacheDir, ID);
+  const file = fs.readdirSync(dir).find(f => f.startsWith("v2-prereq-close-"));
+  const cachedText = fs.readFileSync(path.join(dir, file), "utf8");
+  fs.writeFileSync(path.join(dir, file), cachedText.replace(/^(### Prerequisite \d+) - /gm, "$1 \u2013 ")); // as an older version cached it
+  seen.length = 0;
+  text = await make();
+  assert.equal(seen.length, 0, "every part reused from the cache, no model call");
+  assert.deepEqual(v2Problems(text, ID, { pdfLink }), [], "reused part was normalised: no prerequisite problem");
+  delete process.env.TUTORIAL_CACHE_DIR;
+  fs.rmSync(cacheDir, { recursive: true, force: true });
+  console.log("ok  cached parts are normalised on reuse");
+}
+
 // 3. Old-style (v1) output is rejected, not published.
 respond = ({ part }) => (part === "opening" ? "## Paper at a glance\n\nThe paper matters.\n\n## Concept map\n\nMaterialize **each stage** as a versioned artifact." : PARTS[part]);
 await assert.rejects(make(), /opening: failed checks after 3 attempts/);

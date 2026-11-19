@@ -210,7 +210,8 @@ export async function generatePaperGuideV2({ paper, pdfPath, grounding, header =
   for (const part of V2_PARTS) {
     const file = cachePath(paper, part);
     if (file && fs.existsSync(file)) {
-      const cached = fs.readFileSync(file, "utf8");
+      // Normalise on reuse too: parts cached by an earlier version of this code predate newer normalisations.
+      const cached = normalizeHeadings(fs.readFileSync(file, "utf8"), part);
       if (!partProblems(cached, part).length) {
         console.log(`${paper.id}/${part.name}: reused ${cached.length} cached characters`);
         written.push(cached);
