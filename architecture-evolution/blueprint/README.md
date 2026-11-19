@@ -49,12 +49,14 @@ The "Agent runtime" layer sits between the AI capabilities and the data layers. 
 
 - [Reference architecture and data design](https://github.com/niyama-admin/learning-lab/blob/main/agents/runtime-architecture/README.md): the pipeline, eight kinds of data, and the choice of store for each.
 - [Implementation languages](https://github.com/niyama-admin/learning-lab/blob/main/agents/languages/README.md): six languages compared, including Node's concurrency model against Python's global interpreter lock.
+- [Agentic access to analytics and warehouse data](https://github.com/niyama-admin/learning-lab/blob/main/agents/data-access/README.md): the NL2SQL pattern, the tool surface, governance, build or buy for vendor services, and the evaluation you must build.
 - [Agent frameworks](https://github.com/niyama-admin/learning-lab/blob/main/agents/frameworks/README.md): sixteen profiles for implementers.
 - [Language and framework selection method](https://github.com/niyama-admin/learning-lab/blob/main/architecture-evolution/language-and-framework-selection.md): this decision method applied to the choice, with defaults by deployment shape.
 
 How to read the components:
 
 - **Agent loop, session execution model, isolation, conversation state, data access.** The three bands separate these options, so filtering works. At the strictest profile the session execution model and the isolation component grey out: no single option is best on every axis, which is the point. Combine them (for example one process per session plus a container).
+- **Analytics and warehouse questions.** Five options from certified functions to free-form read-only SQL. The bands are priors, not measurements: no independent study evaluates the managed services, and public benchmarks score low on realistic warehouses. Use the component to see the trade-offs, then run your own evaluation.
 - **Implementation language.** The bands do **not** separate languages, because an agent loop spends nearly all its time waiting on the model, a tool, or a person. Every option passes at every band by design. Decide by deployment shape, official SDKs, protocol SDK tier, packaging, sandboxing, and team, using the selection method above. Node has no global lock but runs JavaScript on one thread per process, which the session execution model component captures.
 - **What this cannot say.** No benchmark of language suitability for an agent runtime exists, and none was run. The values are reasoned from documentation, framework profiles that were installed and run against a scripted stub model, and two third-party source-code studies of coding agents. Replace them with measurements from your own spike.
 

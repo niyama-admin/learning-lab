@@ -213,6 +213,18 @@ window.ARCHITECTURE_CATALOG = {
           ]
         },
         {
+          id: "agent-analytics-access",
+          name: "Analytics and warehouse questions",
+          summary: "How the agent answers a business question from warehouse data. Public benchmarks are weak evidence (best agent 21.36% on Spider 2.0; 52.8% annotation errors reported for BIRD Mini-Dev), and no independent study evaluates the vendor services. Own the semantic layer, a gold evaluation set, and the tool interface; run every option behind the same adapter. See the data-access pattern.",
+          options: [
+            { name: "Certified function or approved metric", examples: "Reviewed parameterised query, stored procedure, Unity Catalog function, metrics API", scale: 3, reliability: 3, latency: 3, note: "No model-written SQL, so the safest and most predictable path for numbers that drive decisions. Covers only the questions someone curated." },
+            { name: "Managed answer service", examples: "Databricks Genie, Fabric data agent, Google Conversational Analytics API", scale: 2, reliability: 2, latency: 2, note: "Vendor model writes, runs and explains. Needs curated context; documented caps (Fabric 25 rows by 25 columns; Google 30 chat calls per minute) and async or streaming delivery. Queries only its own platform. No independent accuracy study found; several parts are Preview." },
+            { name: "Managed SQL generator", examples: "Snowflake Cortex Analyst, Amazon Bedrock GenerateQuery", scale: 2, reliability: 2, latency: 2, note: "Returns SQL; you execute, validate and cap it, which keeps the boundary in your hands. Needs a semantic model or curated knowledge base. Per-message or per-request limits and cost." },
+            { name: "Own NL2SQL over a semantic layer", examples: "Open or hosted model, schema selection, execution-feedback repair, voting", scale: 2, reliability: 2, latency: 1, note: "Works across platforms and with open models, and you control evaluation and access. Most to build. Staged agents cost several model calls per question (about 3.5 per candidate in one study)." },
+            { name: "Free-form read-only SQL tool", examples: "Reference Postgres or ClickHouse MCP server; run_readonly_sql", scale: 1, reliability: 1, latency: 2, note: "Prototype default. No semantic layer, and read-only is configuration: the database role is the boundary. Add row, time and cost caps and a query validator before real data." }
+          ]
+        },
+        {
           id: "agent-language",
           name: "Implementation language",
           summary: "Capacity bands do not separate these: an agent loop is I/O-bound, so every option passes at every band. Decide by deployment shape, official SDKs, protocol SDK tier, packaging, sandboxing, and team. See the selection method.",
