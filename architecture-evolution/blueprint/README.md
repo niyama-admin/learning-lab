@@ -62,7 +62,6 @@ How to read the components:
 
 The current values are illustrative priors, not validated product claims or procurement advice. Replace them with customer-specific evidence records following the [decision method](../decision-method.md). A production version should load a versioned catalog with sources, observation dates, confidence, costs, lifecycle state, exceptions, and customer allowlists.
 
-## Where this copy is published
+## Where this blueprint is published
 
-This repository holds a copy of the blueprint. The live site is built from the **consulting** repository by its own workflow, which publishes `common/architecture-evolution/blueprint/**` when a change reaches that repository's `main` branch. Changing the files here does not update the live site; the same files must be copied to the consulting repository. The two copies were identical before the agent runtime layer was added, so check for drift before copying.
-
+The blueprint lives in two repositories: **learning-lab**, where it is developed alongside the research it draws on, and **consulting**, the copy that is published. The live site is built from the consulting copy by its own workflow, which publishes `common/architecture-evolution/blueprint/**` when a change reaches that repository's `main` branch. A change in one repository does not reach the other, or the live site, by itself: copy the same files across. The two copies were identical before the agent runtime layer was added; check for drift before copying.
