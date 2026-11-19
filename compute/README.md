@@ -21,12 +21,19 @@ Start with [ROADMAP.md](ROADMAP.md). The curriculum deliberately distinguishes:
 - `render-compute-tutorials.mjs`: deterministic local renderer; it does not call a model API
 - `verify-compute.mjs`: validates PDFs, source mappings, tutorial structure, and depth
 
-## Local build
+## Tutorial standard (format v2)
+
+All ten tutorials use **format v2**, the same standard as the [LLM paper guides](../llm-learning-repository/references/guide-authoring-spec-v2.md), adapted for vendor manuals and papers in [AUTHORING.md](AUTHORING.md). Each has a worked example built from real material, terms defined before use, results explained in plain words, a map of the sources by PDF page, the questions readers get stuck on, and only the prerequisites the tutorial uses. Every number is tied to a **named product and generation** and cited to a PDF page or live URL, and inconsistencies found inside the sources are listed instead of silently fixed.
+
+**Measured, not just described.** Where the authoring machine could run it (an Apple M5 Pro, Arm, with `clang`), the tutorials compile and run real programs: a pointer-chasing latency staircase, dependent-chain instruction latency, a message-passing litmus test that shows the weak-memory outcome appear with relaxed atomics and vanish with release/acquire, Neon intrinsics, a CPU-versus-GPU break-even measurement. Those numbers are properties of that one machine and are labelled as such; they illustrate a method and are never claims about the vendor hardware a tutorial describes. x86-64, CUDA, HIP and SYCL code could not be run there and is labelled `not run`.
+
+**Limits.** Two x86-64 vendor manuals (AMD APM, Intel SDM) could not be fetched automatically, so the x86-64 tutorial marks statements about them as general knowledge. The local CUDA guide is the legacy 13.3 snapshot that NVIDIA has since replaced; the CUDA tutorial notes the differences it found against the live guide.
 
 ```text
-node compute/render-compute-tutorials.mjs
 node compute/verify-compute.mjs
 ```
+
+`render-compute-tutorials.mjs` is the legacy template renderer; it skips v2 tutorials unless `--overwrite-v2` is passed (do not).
 
 Vendor manuals evolve. The manifest records a retrieval date and keeps live documentation URLs next to local snapshots. Treat performance numbers as properties of the named implementation and configuration, not of an ISA in general.
 
