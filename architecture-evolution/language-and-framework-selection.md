@@ -203,18 +203,18 @@ The features that most often justify a framework:
 
 | Shape (Section 2.1) | Language default | Framework default | Why, and the main thing to prove in the spike |
 |---|---|---|---|
-| A. Local agent on user machines | **Rust**, or **Go** if a weaker sandbox story is acceptable | Own loop. No framework unless Claude-only (then evaluate the Claude Agent SDK and its footprint) | Single binary, native sandbox calls, direct MCP SDK (Tier 1). No official Anthropic Rust SDK, so budget a thin HTTP client. Prove the sandbox on every OS you ship |
-| B. Server-side gateway or orchestrator | **Go**; **C#** in a .NET shop | Own loop on the official SDKs. LangGraph only if Python and a durable graph are first-release needs | Cheap concurrency and cancellation. Prove cancellation propagates to the stream and to child processes under injected faults |
-| C. Embedded in an existing product | **C#** on .NET; **Java** on the JVM | Microsoft Agent Framework (.NET) or Spring AI / LangChain4j (JVM) for the application surface; keep the loop and approvals yours when they matter | Reuse the platform's identity and operations. On the JVM accept MCP at Tier 2 and prove the protocol features you need exist |
-| D. Research, evaluation, open-model tuning | **Python** | Own loop or PydanticAI / LangGraph; smolagents only with a real sandbox | Fastest iteration and the model ecosystem. Move stable parts later |
-| E. Edge or offline | **Rust** or **Go** | Own loop; model over a local HTTP server | Footprint and startup dominate. Avoid framework dependency trees |
+| A. Local agent on user machines | **Rust**, or **Go** if a weaker sandbox story is acceptable; **TypeScript** if you can assume or bundle Node and your UI is TypeScript | Own loop. No framework unless Claude-only (then evaluate the Claude Agent SDK and its footprint). In TypeScript, the Vercel AI SDK as the provider layer under your own loop | Rust and Go: single binary, native sandbox calls, direct MCP SDK (Tier 1); no official Anthropic Rust SDK, so budget a thin HTTP client. TypeScript: four of the five TypeScript systems in the harness study are local developer tools, but users need Node or you bundle a runtime, and each process runs JavaScript on one thread. Prove the sandbox on every OS you ship
+| B. Server-side gateway or orchestrator | **Go**; **C#** in a .NET shop; **TypeScript** if the team is TypeScript and you run one process per session | Own loop on the official SDKs. LangGraph only if Python and a durable graph are first-release needs. Mastra if you want memory, workflows and evals in TypeScript | Cheap concurrency and cancellation. In Node, prove the noisy-neighbour case (the language treatise, Section 9): a CPU burst in one session must not stall the others. Prove cancellation propagates to the stream and to child processes under injected faults |
+| C. Embedded in an existing product | **C#** on .NET; **Java** on the JVM; **TypeScript** on an existing Node service | Microsoft Agent Framework (.NET) or Spring AI / LangChain4j (JVM) for the application surface; keep the loop and approvals yours when they matter | Reuse the platform's identity and operations. On the JVM accept MCP at Tier 2 and prove the protocol features you need exist |
+| D. Research, evaluation, open-model tuning | **Python** (or **TypeScript** if the product around it is TypeScript) | Own loop or PydanticAI / LangGraph; smolagents only with a real sandbox | Fastest iteration and the model ecosystem. Move stable parts later |
+| E. Edge or offline | **Rust** or **Go** | Own loop; model over a local HTTP server | Footprint and startup dominate. Avoid framework dependency trees. TypeScript only if Node is already on the device |
 
 If the answer to "where does it run?" is "both on user machines and on a server", decide the **loop specification and conformance tests first**, then implement the local variant and the server variant against them; do not pick one language for both without a reason you can test.
 
 ### 11.3 What would change these defaults
 
 - A framework above ships a release that gives you permissions, a sandbox, or step-level durability you can verify, or stops breaking its API for two consecutive majors.
-- The MCP Java SDK reaches Tier 1, or Anthropic ships an official Rust SDK (the two verified gaps in the five-language comparison).
+- The MCP Java SDK reaches Tier 1, or Anthropic ships an official Rust SDK (the two verified gaps in the six-language comparison).
 - Your spike shows a framework matches your open model's tool-call format where the owned loop does not (the open-model gate is the one most likely to flip a default).
 - You change shape (Section 9).
 
