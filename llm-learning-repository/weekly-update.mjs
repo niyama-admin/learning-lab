@@ -2,7 +2,8 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { generatePaperTutorial } from "./tutorial-authoring.mjs";
+import { generatePaperGuideV2, isHardProblem } from "./tutorial-authoring-v2.mjs";
+import { isV2, v2Problems } from "./verify-v2-guides.mjs";
 
 const root = process.env.LEARNING_REPO_ROOT
   ? path.resolve(process.env.LEARNING_REPO_ROOT)
@@ -128,6 +129,14 @@ async function downloadPdf(paper, output, args) {
 }
 
 
+const V2_STUDY_PLAN = `## Daily study plan (60-90 minutes)
+
+1. **15 min:** Read "Read this first", the worked example and Tutorial 1; give a five-minute teach-back without notes.
+2. **25 min:** Read Tutorial 2 and the matching paper sections from the reading map; write the smallest baseline comparison.
+3. **25 min:** Read Tutorial 3 and check at least three numbers against the PDF; inspect one table, uncertainty estimate or ablation.
+4. **15 min:** Answer the checkpoint, then record claim, evidence, assumption, failure mode and next experiment.
+5. **10 min:** Link the paper to one earlier curriculum paper and note what changed.`;
+
 function writePrBody(week, completed, skipped) {
   const lines = [
     `Automated Saturday intake from arXiv for the week ending ${week}.`,
@@ -150,7 +159,7 @@ function writePrBody(week, completed, skipped) {
 
 export async function generate(options = {}) {
   const args = options.args ?? globalArgs;
-  const authorTutorial = options.author ?? generatePaperTutorial;
+  const authorTutorial = options.author ?? generatePaperGuideV2;
   const end = endDate(args.get("--week-ending"));
   const start = new Date(end.valueOf() - 7 * 86_400_000);
   const week = isoDay(end);
@@ -161,6 +170,8 @@ export async function generate(options = {}) {
   }
   const feed = parseFeed(await fetchFeed(args));
   const selected = selectPapers(feed, knownIds(), start, end);
+  const maxPapers = Number.parseInt(String(args.get("--max-papers") ?? ""), 10);
+  if (Number.isFinite(maxPapers) && maxPapers >= 0) selected.length = Math.min(selected.length, maxPapers);
   if (!selected.length) {
     console.log(`No qualifying new papers for ${isoDay(start)} through ${week}`);
     return;
@@ -183,7 +194,9 @@ export async function generate(options = {}) {
       await downloadPdf(paper, pdf, args);
       try {
         tutorial = args.has("--no-llm") ? fallbackGuide(paper) : await authorTutorial({
-          paper: { ...paper, authors: paper.authors.join(", ") }, pdfPath: pdf
+          paper: { ...paper, authors: paper.authors.join(", ") }, pdfPath: pdf,
+          header: `> **${paper.day} - ${paper.categoryLabel}** - published ${paper.published.slice(0, 10)} - selection score ${paper.score} (keyword relevance and recency; not a quality verdict)`,
+          studyPlan: V2_STUDY_PLAN, pdfLink: `../papers/${paper.id}.pdf`
         });
       } catch (error) {
         if (process.env.REQUIRE_THOROUGH_TUTORIALS === "true") throw error;
@@ -200,7 +213,7 @@ export async function generate(options = {}) {
       continue;
     }
     const filename = `${paper.day.toLowerCase()}-${paper.category}-${slugify(paper.title)}.md`;
-    const guide = `# ${paper.day}: ${paper.title}\n\n> **Category:** ${paper.categoryLabel}  \n> **Authors:** ${paper.authors.join(", ")}  \n> **Published:** ${paper.published.slice(0, 10)}  \n> **Sources:** [arXiv abstract](https://arxiv.org/abs/${paper.id}) · [local PDF](../papers/${paper.id}.pdf)  \n> **Selection score:** ${paper.score} (keyword relevance and recency; not a quality verdict)\n\n## Abstract\n\n${paper.abstract}\n\n${tutorial}\n\n## Daily study plan (60-90 minutes)\n\n1. **15 min:** Read Tutorial 1, abstract, figures, and conclusion; give a five-minute teach-back.\n2. **25 min:** Read Tutorial 2 and methods; write the smallest baseline comparison.\n3. **25 min:** Read Tutorial 3 and results; inspect one table, uncertainty estimate, or ablation.\n4. **15 min:** Record claim, evidence, assumption, failure mode, and next experiment.\n5. **10 min:** Link the paper to one earlier curriculum paper and note what changed.\n`;
+    const guide = isV2(tutorial) ? tutorial : `# ${paper.day}: ${paper.title}\n\n> **Category:** ${paper.categoryLabel}  \n> **Authors:** ${paper.authors.join(", ")}  \n> **Published:** ${paper.published.slice(0, 10)}  \n> **Sources:** [arXiv abstract](https://arxiv.org/abs/${paper.id}) · [local PDF](../papers/${paper.id}.pdf)  \n> **Selection score:** ${paper.score} (keyword relevance and recency; not a quality verdict)\n\n## Abstract\n\n${paper.abstract}\n\n${tutorial}\n\n## Daily study plan (60-90 minutes)\n\n1. **15 min:** Read Tutorial 1, abstract, figures, and conclusion; give a five-minute teach-back.\n2. **25 min:** Read Tutorial 2 and methods; write the smallest baseline comparison.\n3. **25 min:** Read Tutorial 3 and results; inspect one table, uncertainty estimate, or ablation.\n4. **15 min:** Record claim, evidence, assumption, failure mode, and next experiment.\n5. **10 min:** Link the paper to one earlier curriculum paper and note what changed.\n`;
     fs.writeFileSync(path.join(guideRoot, filename), guide);
     if (fs.existsSync(pdf)) checksumLines.push(`${crypto.createHash("sha256").update(fs.readFileSync(pdf)).digest("hex")}  papers/${paper.id}.pdf`);
     paper.guide = `daily-plan/${filename}`;
@@ -251,6 +264,12 @@ function verify() {
       if (!fs.existsSync(guide)) { console.error(`missing guide ${guide}`); failures++; }
       else {
         const text = fs.readFileSync(guide, "utf8");
+        if (isV2(text)) {
+          const problems = v2Problems(text, record.id, { pdfLink: `../papers/${record.id}.pdf` });
+          const hard = problems.filter(isHardProblem);
+          for (const problem of problems) console.error(`${guide}: ${isHardProblem(problem) ? "FAIL" : "warning"}: ${problem}`);
+          failures += hard.length;
+        }
         for (const required of ["Tutorial 1", "Tutorial 2", "Tutorial 3", "Daily study plan"]) if (!text.includes(required)) { console.error(`${guide}: missing ${required}`); failures++; }
       }
       if (!fs.existsSync(pdf)) { console.error(`missing PDF ${pdf}`); failures++; }

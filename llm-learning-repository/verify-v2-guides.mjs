@@ -76,7 +76,8 @@ export function v2Problems(text, id, options = {}) {
 
   if ((text.match(/```mermaid/g) ?? []).length < 2) problems.push("fewer than two Mermaid diagrams");
   if (!compute && id && !text.includes(`https://arxiv.org/abs/${id}`)) problems.push("missing direct arXiv abstract link");
-  if (!compute && id && !text.includes(`../../papers/${id}.pdf`)) problems.push("missing local PDF link");
+  const pdfLink = options.pdfLink ?? (id ? `../../papers/${id}.pdf` : "");
+  if (!compute && id && !text.includes(pdfLink)) problems.push("missing local PDF link");
 
   const words = section(text, "## Words you need");
   const termRows = words.split("\n").filter((l) => /^\|/.test(l) && !/^\|\s*-/.test(l)).length - 1;

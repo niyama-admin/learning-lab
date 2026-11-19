@@ -55,7 +55,7 @@ export async function extractGroundingText(pdfPath, maxChars = 220_000) {
   return { text, pageCount: pages.length, selectedPages: chosen.size, truncated: true };
 }
 
-function outputText(json) {
+export function outputText(json) {
   return json.output_text || json.choices?.[0]?.message?.content || json.output?.flatMap(item => item.content ?? [])
     .filter(item => item.type === "output_text").map(item => item.text).join("\n");
 }
