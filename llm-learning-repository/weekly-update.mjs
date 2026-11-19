@@ -1,13 +1,17 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { generatePaperTutorial } from "./tutorial-authoring.mjs";
 
-const root = path.dirname(new URL(import.meta.url).pathname.replace(/^\/(.:)/, "$1"));
-const args = new Map(process.argv.slice(2).map(x => {
+const root = process.env.LEARNING_REPO_ROOT
+  ? path.resolve(process.env.LEARNING_REPO_ROOT)
+  : path.dirname(new URL(import.meta.url).pathname.replace(/^\/(.:)/, "$1"));
+const parseArgs = argv => new Map(argv.map(x => {
   const [key, ...rest] = x.split("=");
   return [key, rest.length ? rest.join("=") : true];
 }));
+const globalArgs = parseArgs(process.argv.slice(2));
 
 const categories = [
   { key: "foundations", day: "Monday", label: "Foundations and model architecture", terms: ["transformer", "language model", "pretrain", "scaling", "token", "attention", "architecture", "embedding", "mixture of experts"] },
@@ -95,7 +99,7 @@ function fallbackGuide(paper) {
   return `## Tutorial 1 - intuition\n\n${firstSentence} In plain language, this paper asks whether a new method or observation changes what an LLM system can do, how reliably it can do it, or what it costs. Start by identifying the before-and-after comparison and one everyday analogy.\n\n## Tutorial 2 - practitioner context\n\nRead the method and evaluation sections and turn the paper into a decision: what component would change, what baseline should remain, and which user outcome would justify adoption? Reproduce the smallest reported comparison. Record model, data, prompt, code, environment, latency, cost, and failure cases. Do not infer production readiness from the abstract.\n\n## Tutorial 3 - researcher depth\n\nIdentify the estimand or central claim, the experimental unit, dataset construction, controls, uncertainty, ablations, and threats to validity. Reconstruct one table or figure, then vary one assumption. Check contamination, selection effects, evaluator dependence, compute matching, and whether the conclusion transfers beyond the reported tasks.\n\n### Research questions\n\n- Which result most strongly distinguishes the method from its baseline?\n- Which uncontrolled variable could explain the same result?\n- What ablation or replication would most reduce uncertainty?`;
 }
 
-async function fetchFeed() {
+async function fetchFeed(args) {
   if (args.get("--feed-file")) return fs.readFileSync(path.resolve(args.get("--feed-file")), "utf8");
   const query = encodeURIComponent("cat:cs.CL OR cat:cs.AI OR cat:cs.LG OR cat:cs.SE OR cat:cs.MA OR cat:cs.HC");
   const url = `https://export.arxiv.org/api/query?search_query=${query}&start=0&max_results=300&sortBy=submittedDate&sortOrder=descending`;
@@ -104,16 +108,49 @@ async function fetchFeed() {
   return response.text();
 }
 
-async function downloadPdf(paper, output) {
+async function downloadPdf(paper, output, args) {
   if (args.has("--skip-download")) return;
-  const response = await fetch(`https://arxiv.org/pdf/${paper.id}`, { headers: { "User-Agent": "niyama-llm-learning-repository/1.0" } });
-  if (!response.ok) throw new Error(`${paper.id}: PDF HTTP ${response.status}`);
-  const bytes = Buffer.from(await response.arrayBuffer());
-  if (!bytes.subarray(0, 5).equals(Buffer.from("%PDF-")) || bytes.length < 10_000) throw new Error(`${paper.id}: invalid PDF`);
-  fs.writeFileSync(output, bytes);
+  let lastError;
+  for (let attempt = 1; attempt <= 4; attempt++) {
+    try {
+      const response = await fetch(`https://arxiv.org/pdf/${paper.id}`, { headers: { "User-Agent": "niyama-llm-learning-repository/1.0" }, signal: AbortSignal.timeout(120_000) });
+      if (!response.ok) throw new Error(`${paper.id}: PDF HTTP ${response.status}`);
+      const bytes = Buffer.from(await response.arrayBuffer());
+      if (!bytes.subarray(0, 5).equals(Buffer.from("%PDF-")) || bytes.length < 10_000) throw new Error(`${paper.id}: invalid PDF`);
+      fs.writeFileSync(output, bytes);
+      return;
+    } catch (error) {
+      lastError = error;
+      if (attempt < 4) await new Promise(resolve => setTimeout(resolve, 5_000 * attempt));
+    }
+  }
+  throw lastError;
 }
 
-async function generate() {
+
+function writePrBody(week, completed, skipped) {
+  const lines = [
+    `Automated Saturday intake from arXiv for the week ending ${week}.`,
+    "",
+    "- Selects at most one new paper for each curriculum category.",
+    "- Creates a Monday-Friday learning plan and three-level tutorials.",
+    "- Downloads PDFs and records SHA-256 checksums.",
+    "- Requires human review; this workflow never auto-merges.",
+    "",
+    `**Guides generated:** ${completed.length}. Generated guides are drafts written by an open model from the paper text; check every number against the PDF.`
+  ];
+  if (skipped.length) {
+    lines.push("", `**Skipped (${skipped.length}):** these papers were selected but not authored. See \`SKIPPED.md\` in the week folder; re-run the workflow manually to retry (accepted parts are cached).`);
+    for (const x of skipped) lines.push(`- ${x.day}: [${x.id}](https://arxiv.org/abs/${x.id}) - ${x.reason.slice(0, 240)}`);
+  }
+  const text = lines.join("\n") + "\n";
+  if (process.env.WEEKLY_PR_BODY_PATH) fs.writeFileSync(process.env.WEEKLY_PR_BODY_PATH, text);
+  if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, text);
+}
+
+export async function generate(options = {}) {
+  const args = options.args ?? globalArgs;
+  const authorTutorial = options.author ?? generatePaperTutorial;
   const end = endDate(args.get("--week-ending"));
   const start = new Date(end.valueOf() - 7 * 86_400_000);
   const week = isoDay(end);
@@ -122,7 +159,7 @@ async function generate() {
     console.log(`Week ${week} is already recorded; no changes made`);
     return;
   }
-  const feed = parseFeed(await fetchFeed());
+  const feed = parseFeed(await fetchFeed(args));
   const selected = selectPapers(feed, knownIds(), start, end);
   if (!selected.length) {
     console.log(`No qualifying new papers for ${isoDay(start)} through ${week}`);
@@ -137,18 +174,30 @@ async function generate() {
   fs.mkdirSync(paperRoot, { recursive: true });
   fs.mkdirSync(guideRoot, { recursive: true });
   const checksumLines = [];
+  const completed = [];
+  const skipped = [];
   for (const paper of selected) {
     const pdf = path.join(paperRoot, `${paper.id}.pdf`);
-    await downloadPdf(paper, pdf);
     let tutorial;
     try {
-      tutorial = args.has("--no-llm") ? fallbackGuide(paper) : await generatePaperTutorial({
-        paper: { ...paper, authors: paper.authors.join(", ") }, pdfPath: pdf
-      });
+      await downloadPdf(paper, pdf, args);
+      try {
+        tutorial = args.has("--no-llm") ? fallbackGuide(paper) : await authorTutorial({
+          paper: { ...paper, authors: paper.authors.join(", ") }, pdfPath: pdf
+        });
+      } catch (error) {
+        if (process.env.REQUIRE_THOROUGH_TUTORIALS === "true") throw error;
+        console.warn(`${paper.id}: full-paper authoring failed; writing a draft fallback: ${error.message}`);
+        tutorial = `> **DRAFT:** Full-paper enrichment did not run. Do not merge this guide as a finished tutorial.\n\n${fallbackGuide(paper)}`;
+      }
     } catch (error) {
-      if (process.env.REQUIRE_THOROUGH_TUTORIALS === "true") throw error;
-      console.warn(`${paper.id}: full-paper authoring failed; writing a draft fallback: ${error.message}`);
-      tutorial = `> **DRAFT:** Full-paper enrichment did not run. Do not merge this guide as a finished tutorial.\n\n${fallbackGuide(paper)}`;
+      // One paper failing must not discard the others (it used to abort the whole week and lose all work).
+      const reason = String(error.message).replace(/\s+/g, " ").slice(0, 600);
+      console.error(`${paper.id}: skipped - ${reason}`);
+      console.log(`::warning title=Skipped ${paper.id}::${reason}`);
+      skipped.push({ id: paper.id, title: paper.title, day: paper.day, reason });
+      fs.rmSync(pdf, { force: true });
+      continue;
     }
     const filename = `${paper.day.toLowerCase()}-${paper.category}-${slugify(paper.title)}.md`;
     const guide = `# ${paper.day}: ${paper.title}\n\n> **Category:** ${paper.categoryLabel}  \n> **Authors:** ${paper.authors.join(", ")}  \n> **Published:** ${paper.published.slice(0, 10)}  \n> **Sources:** [arXiv abstract](https://arxiv.org/abs/${paper.id}) · [local PDF](../papers/${paper.id}.pdf)  \n> **Selection score:** ${paper.score} (keyword relevance and recency; not a quality verdict)\n\n## Abstract\n\n${paper.abstract}\n\n${tutorial}\n\n## Daily study plan (60-90 minutes)\n\n1. **15 min:** Read Tutorial 1, abstract, figures, and conclusion; give a five-minute teach-back.\n2. **25 min:** Read Tutorial 2 and methods; write the smallest baseline comparison.\n3. **25 min:** Read Tutorial 3 and results; inspect one table, uncertainty estimate, or ablation.\n4. **15 min:** Record claim, evidence, assumption, failure mode, and next experiment.\n5. **10 min:** Link the paper to one earlier curriculum paper and note what changed.\n`;
@@ -156,16 +205,29 @@ async function generate() {
     if (fs.existsSync(pdf)) checksumLines.push(`${crypto.createHash("sha256").update(fs.readFileSync(pdf)).digest("hex")}  papers/${paper.id}.pdf`);
     paper.guide = `daily-plan/${filename}`;
     paper.pdf = `papers/${paper.id}.pdf`;
+    completed.push(paper);
   }
+  writePrBody(week, completed, skipped);
+  if (!completed.length) {
+    fs.rmSync(weekRoot, { recursive: true, force: true });
+    throw new Error(`Every selected paper failed (${skipped.length}); nothing was written. Reasons: ${skipped.map(x => `${x.id}: ${x.reason}`).join(" | ")}`);
+  }
+  selected.length = 0;
+  selected.push(...completed);
   fs.writeFileSync(path.join(weekRoot, "metadata.json"), JSON.stringify(selected, null, 2) + "\n");
   fs.writeFileSync(path.join(weekRoot, "checksums.sha256"), checksumLines.join("\n") + (checksumLines.length ? "\n" : ""));
+  if (skipped.length) {
+    fs.writeFileSync(path.join(weekRoot, "SKIPPED.md"), `# Skipped papers - week ending ${week}\n\nThese papers were selected but their guides could not be authored. Re-run the workflow manually (workflow_dispatch) or write the guide by hand following references/guide-authoring-spec-v2.md.\n\n${skipped.map(x => `- **${x.day}:** [${x.id}](https://arxiv.org/abs/${x.id}) ${x.title}\n  - ${x.reason}`).join("\n")}\n`);
+  }
+  const start0 = start;
   const rows = categories.map(category => {
     const paper = selected.find(x => x.category === category.key);
-    return paper ? `| ${category.day} | ${category.label} | [${escapeCell(paper.title)}](${paper.guide}) |` : `| ${category.day} | ${category.label} | Catch up, reproduce, and review prior notes |`;
+    const missed = skipped.find(x => x.day === category.day);
+    return paper ? `| ${category.day} | ${category.label} | [${escapeCell(paper.title)}](${paper.guide}) |` : missed ? `| ${category.day} | ${category.label} | Guide not generated for [${missed.id}](https://arxiv.org/abs/${missed.id}); see [SKIPPED.md](SKIPPED.md) |` : `| ${category.day} | ${category.label} | Catch up, reproduce, and review prior notes |`;
   }).join("\n");
-  fs.writeFileSync(path.join(weekRoot, "README.md"), `# Week ending ${week}\n\nPapers submitted from ${isoDay(start)} through ${week}, selected from the latest arXiv feed. Selection balances the five curriculum categories and excludes papers already recorded in the core or weekly collections. Human review is required before merging.\n\n| Day | Category | Reading |\n|---|---|---|\n${rows}\n\n## Curation notes\n\nThe score is a transparent relevance heuristic based on title/abstract keywords, arXiv subject fit, and recency. It is not peer review, citation impact, or a quality guarantee. Read the paper and verify all generated explanations against the source PDF.\n`);
+  fs.writeFileSync(path.join(weekRoot, "README.md"), `# Week ending ${week}\n\nPapers submitted from ${isoDay(start0)} through ${week}, selected from the latest arXiv feed. Selection balances the five curriculum categories and excludes papers already recorded in the core or weekly collections. Human review is required before merging.\n\n| Day | Category | Reading |\n|---|---|---|\n${rows}\n\n## Curation notes\n\nThe score is a transparent relevance heuristic based on title/abstract keywords, arXiv subject fit, and recency. It is not peer review, citation impact, or a quality guarantee. Read the paper and verify all generated explanations against the source PDF.\n`);
   updateWeeklyIndex(week, selected.length);
-  console.log(`Created week ${week} with ${selected.length} papers`);
+  console.log(`Created week ${week} with ${selected.length} papers${skipped.length ? `; skipped ${skipped.length}` : ""}`);
 }
 
 function updateWeeklyIndex(week, count) {
@@ -208,6 +270,8 @@ async function selfTest() {
   console.log("weekly updater self-test passed");
 }
 
-if (args.has("--verify")) verify();
-else if (args.has("--self-test")) await selfTest();
-else await generate();
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
+  if (globalArgs.has("--verify")) verify();
+  else if (globalArgs.has("--self-test")) await selfTest();
+  else await generate();
+}
