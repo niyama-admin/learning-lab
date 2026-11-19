@@ -49,6 +49,7 @@ The "Agent runtime" layer sits between the AI capabilities and the data layers. 
 
 - [Reference architecture and data design](https://github.com/niyama-admin/learning-lab/blob/main/agents/runtime-architecture/README.md): the pipeline, eight kinds of data, and the choice of store for each.
 - [Implementation languages](https://github.com/niyama-admin/learning-lab/blob/main/agents/languages/README.md): six languages compared, including Node's concurrency model against Python's global interpreter lock.
+- [Tenant isolation](https://github.com/niyama-admin/learning-lab/blob/main/agents/tenant-isolation/README.md): five isolation models with Mermaid and plain-text diagrams, what the standards say, and transcripts and caches under tenancy.
 - [Agent frameworks](https://github.com/niyama-admin/learning-lab/blob/main/agents/frameworks/README.md): sixteen profiles for implementers.
 - [Language and framework selection method](https://github.com/niyama-admin/learning-lab/blob/main/architecture-evolution/language-and-framework-selection.md): this decision method applied to the choice, with defaults by deployment shape.
 

@@ -203,6 +203,19 @@ window.ARCHITECTURE_CATALOG = {
           ]
         },
         {
+          id: "agent-tenancy",
+          name: "Tenant isolation",
+          summary: "How one customer's conversations, memory, caches and credentials are kept from another's. No standard we could read mandates a model (NIST 800-53, GDPR, DPDP and HIPAA are risk-based); PCI DSS Appendix A1 and FedRAMP require tested separation. Pooled rows with database-enforced row-level security, plus a silo tier for customers who need one, is the usual start. See the tenant-isolation pattern.",
+          options: [
+            { name: "Pool: tenant_id column with row-level security", examples: "PostgreSQL RLS with FORCE, plain application role, tenant set per request", scale: 3, reliability: 2, latency: 3, note: "Highest density and lowest cost. A missing filter or a bypass role leaks everything, so enforce in the database and test cross-tenant. Hard per-tenant restore; noisy neighbour." },
+            { name: "Table per tenant", examples: "events_acme, events_globex", scale: 1, reliability: 2, latency: 3, note: "Every migration fans out across tables. No primary source gives limits for relational stores; measure before choosing." },
+            { name: "Schema per tenant", examples: "acme.events, globex.events", scale: 1, reliability: 2, latency: 3, note: "Per-tenant grants and export, but migration fan-out and a wrong search_path reads the wrong tenant. Shares one server's resources. Limits not verified; measure." },
+            { name: "Database per tenant", examples: "Elastic pool of per-tenant databases", scale: 2, reliability: 3, latency: 3, note: "A query bug cannot cross databases; per-tenant backup, restore, key and region. Needs a control plane and fleet operations; cross-tenant reporting needs a warehouse." },
+            { name: "Infrastructure per tenant (silo)", examples: "Account or subscription per tenant, deployed from one template", scale: 1, reliability: 3, latency: 3, note: "Strongest isolation and simplest answer to a regulator. Cost and operations scale with tenant count; automate onboarding and rollout." },
+            { name: "Hybrid: pool by default, silo on demand", examples: "Control plane maps tenant to tier; cells or stamps", scale: 3, reliability: 3, latency: 3, note: "Matches AWS bridge and Azure vertically partitioned guidance. Code must support both shapes and you need a tenant-to-deployment map; build the pool-to-silo migration early." }
+          ]
+        },
+        {
           id: "agent-data-access",
           name: "Access to business data sources",
           summary: "How the agent reaches systems of record. Whatever the pattern, retrieved content is untrusted input: documents can carry instructions aimed at the model.",
