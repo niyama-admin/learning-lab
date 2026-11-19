@@ -52,3 +52,17 @@ node weekly-update.mjs --verify
 ```
 
 Use the workflow's manual-dispatch input to backfill a particular UTC week-ending date. Re-running the same date is idempotent because recorded arXiv IDs are excluded.
+
+## Failure handling
+
+The job used to abort the whole week when any single model call or quality check failed, discarding hours of authoring; it failed every Saturday from 12 September to 31 October 2026 and GitHub then disabled the schedule for inactivity. It now behaves as follows.
+
+- **Model calls** time out after 300 s (`TUTORIAL_REQUEST_TIMEOUT_MS`), retry timeouts and 408/425/429/5xx on the same model with exponential backoff, then move to the next model, and repeat the whole candidate list for up to three rounds. A model that answers 404 "not a responses model" is switched to `/chat/completions` and remembered.
+- **Quality gates** give each chapter part three attempts. A missing limitations discussion in the assembled guide no longer discards the paper; the guide is published with a `REVIEW NEEDED` banner.
+- **Per-paper isolation:** a paper that cannot be authored is skipped and listed in `SKIPPED.md` and in the pull request body; the other papers are kept. If every paper fails, the job fails loudly and records nothing for that week.
+- **Resume:** accepted chapter parts are cached (Actions cache) so a manual re-run with `week_ending` reuses them.
+- **Offline tests:** `node test-weekly-resilience.mjs` exercises these behaviours against a stub inference server and runs before every weekly job.
+
+Scheduled workflows are disabled by GitHub after 60 days without repository activity. If it happens again, re-enable with `gh workflow enable "Weekly LLM knowledge update"`.
+
+The generated weekly guides are drafts in the older three-level format, written by an open model from the paper text. They are not held to the v2 standard in [guide-authoring-spec-v2.md](guide-authoring-spec-v2.md).

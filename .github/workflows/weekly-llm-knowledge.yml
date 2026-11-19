@@ -28,6 +28,9 @@ jobs:
       MODEL_ACCESS_KEY: ${{ secrets.MODEL_ACCESS_KEY }}
       DIGITALOCEAN_MODEL_ID: ${{ vars.DIGITALOCEAN_MODEL_ID }}
       REQUIRE_THOROUGH_TUTORIALS: "true"
+      # Accepted chapter parts are cached so a re-run resumes instead of paying for hours of authoring again.
+      TUTORIAL_CACHE_DIR: ${{ runner.temp }}/tutorial-parts
+      WEEKLY_PR_BODY_PATH: ${{ runner.temp }}/weekly-pr-body.md
     steps:
       - name: Check out main
         uses: actions/checkout@v6
@@ -38,9 +41,34 @@ jobs:
       - name: Install PDF text extraction
         run: sudo apt-get update && sudo apt-get install -y poppler-utils
 
+      - name: Offline self-tests (model client retries, per-paper failure isolation)
+        working-directory: llm-learning-repository
+        run: |
+          node weekly-update.mjs --self-test
+          node test-weekly-resilience.mjs
+
+      - name: Default pull request body
+        run: printf 'Automated Saturday intake from arXiv. Requires human review; this workflow never auto-merges.\n' > "$WEEKLY_PR_BODY_PATH"
+
+      - name: Restore cached chapter parts
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/tutorial-parts
+          key: tutorial-parts-${{ github.run_id }}
+          restore-keys: |
+            tutorial-parts-
+
       - name: Fetch, select, summarize, and download
+        id: curate
         working-directory: llm-learning-repository
         run: node weekly-update.mjs ${{ inputs.week_ending && format('--week-ending={0}', inputs.week_ending) || '' }}
+
+      - name: Save cached chapter parts
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/tutorial-parts
+          key: tutorial-parts-${{ github.run_id }}
 
       - name: Validate core and weekly repositories
         working-directory: llm-learning-repository
@@ -56,13 +84,5 @@ jobs:
           delete-branch: true
           commit-message: weekly-llm-knowledge-update
           title: "Weekly LLM knowledge update"
-          body: |
-            Automated Saturday intake from arXiv.
-
-            - Selects at most one new paper for each curriculum category.
-            - Creates a Monday-Friday learning plan and three-level tutorials.
-            - Downloads PDFs and records SHA-256 checksums.
-            - Requires human review; this workflow never auto-merges.
-
-            Tutorials use source-grounded chapter generation, strict section-level quality gates, and deterministic verified prerequisite modules through DigitalOcean Serverless Inference using the production `MODEL_ACCESS_KEY`; the job fails rather than publishing a skeletal fallback.
+          body-path: ${{ runner.temp }}/weekly-pr-body.md
           labels: documentation, automated

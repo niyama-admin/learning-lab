@@ -1,5 +1,7 @@
 import { execFile } from "node:child_process";
+import crypto from "node:crypto";
 import fs from "node:fs";
+import path from "node:path";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
@@ -67,67 +69,122 @@ const defaultModelCandidates = [
   "deepseek-4-flash"
 ];
 
-async function createModelResponse(input) {
-  const requestIntervalMs = Number.parseInt(process.env.TUTORIAL_REQUEST_INTERVAL_MS || "120000", 10);
+// Models whose serverless endpoint is /chat/completions. Learned at run time as well: a model that answers
+// 404 "not a responses model" is retried on /chat/completions and remembered (this was failing every week).
+const chatCompletionsPattern = /^(llama|qwen|alibaba-|deepseek-|mistral|kimi)/;
+const learnedChatModels = new Set();
+
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+const intFromEnv = (name, fallback) => {
+  const value = Number.parseInt(process.env[name] ?? "", 10);
+  return Number.isFinite(value) && value >= 0 ? value : fallback;
+};
+const isTransientStatus = status => status === 408 || status === 425 || status === 429 || status >= 500;
+
+function requestBody(model, input, useChat) {
+  return useChat
+    ? { model, messages: [{ role: "user", content: input }], max_tokens: 8_000, temperature: 0.15, stream: false }
+    : { model, input, max_output_tokens: 8_000, temperature: 0.15, stream: false };
+}
+
+// Calls DigitalOcean serverless inference. Transient failures (timeouts, 408/425/429/5xx) are retried on the same
+// model with exponential backoff, then the next model is tried, and the whole candidate list is attempted again for
+// several rounds before giving up. Permanent failures (model unavailable, bad request) skip to the next model.
+export async function createModelResponse(input) {
+  const requestIntervalMs = intFromEnv("TUTORIAL_REQUEST_INTERVAL_MS", 120_000);
+  const timeoutMs = intFromEnv("TUTORIAL_REQUEST_TIMEOUT_MS", 300_000);
+  const retryBaseMs = intFromEnv("TUTORIAL_RETRY_BASE_MS", 30_000);
+  const rounds = Math.max(1, intFromEnv("TUTORIAL_MODEL_ROUNDS", 3));
+  const attemptsPerModel = Math.max(1, intFromEnv("TUTORIAL_ATTEMPTS_PER_MODEL", 3));
+  const baseUrl = (process.env.DIGITALOCEAN_BASE_URL || "https://inference.do-ai.run/v1").replace(/\/$/, "");
   const remainingInterval = lastModelSuccessAt + requestIntervalMs - Date.now();
   if (lastModelSuccessAt && remainingInterval > 0) {
     console.log(`DigitalOcean pacing: waiting ${Math.ceil(remainingInterval / 1000)}s before the next long-form request`);
-    await new Promise(resolve => setTimeout(resolve, remainingInterval));
+    await sleep(remainingInterval);
   }
   const configured = process.env.DIGITALOCEAN_MODEL_ID?.trim();
-  const candidates = configured
-    ? [configured]
-    : resolvedModel
-      ? [resolvedModel, ...defaultModelCandidates.filter(model => model !== resolvedModel)]
-      : defaultModelCandidates;
   const failures = [];
-  for (const model of candidates) {
-    const usesChatCompletions = /^(llama|qwen|alibaba-|deepseek-|mistral)/.test(model);
-    const endpoint = usesChatCompletions ? "chat/completions" : "responses";
-    const body = usesChatCompletions
-      ? { model, messages: [{ role: "user", content: input }], max_tokens: 8_000, temperature: 0.15, stream: false }
-      : { model, input, max_output_tokens: 8_000, temperature: 0.15, stream: false };
-    for (let requestAttempt = 1; requestAttempt <= 3; requestAttempt++) {
-      let response;
-      try {
-        response = await fetch(`https://inference.do-ai.run/v1/${endpoint}`, {
-          method: "POST",
-          headers: { "Authorization": `Bearer ${process.env.MODEL_ACCESS_KEY}`, "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-          signal: AbortSignal.timeout(90_000)
-        });
-      } catch (error) {
-        failures.push(`${model}: network/timeout ${error.cause?.code ?? error.name}: ${error.message}`);
-        if (configured) throw new Error(`DigitalOcean inference failed: ${failures.join(" | ")}`);
-        console.warn(`${model}: serverless request timed out; trying the next model`);
+  const unavailableModels = new Set();
+  for (let round = 1; round <= rounds; round++) {
+    const ordered = configured
+      ? [configured]
+      : resolvedModel
+        ? [resolvedModel, ...defaultModelCandidates.filter(model => model !== resolvedModel)]
+        : defaultModelCandidates;
+    const candidates = ordered.filter(model => !unavailableModels.has(model));
+    if (!candidates.length) break;
+    for (const model of candidates) {
+      let useChat = learnedChatModels.has(model) || chatCompletionsPattern.test(model);
+      for (let attempt = 1; attempt <= attemptsPerModel; attempt++) {
+        const endpoint = useChat ? "chat/completions" : "responses";
+        let response;
+        try {
+          response = await fetch(`${baseUrl}/${endpoint}`, {
+            method: "POST",
+            headers: { "Authorization": `Bearer ${process.env.MODEL_ACCESS_KEY}`, "Content-Type": "application/json" },
+            body: JSON.stringify(requestBody(model, input, useChat)),
+            signal: AbortSignal.timeout(timeoutMs)
+          });
+        } catch (error) {
+          failures.push(`${model}: network/timeout ${error.cause?.code ?? error.name}: ${error.message}`);
+          if (attempt < attemptsPerModel) {
+            const delayMs = retryBaseMs * 2 ** (attempt - 1);
+            console.warn(`${model}: no response within ${timeoutMs / 1000}s (${attempt}/${attemptsPerModel}); retrying in ${delayMs / 1000}s`);
+            await sleep(delayMs);
+            continue;
+          }
+          console.warn(`${model}: still not responding; trying the next model`);
+          break;
+        }
+        if (response.ok) {
+          const json = await response.json();
+          const text = outputText(json);
+          if (text?.trim()) {
+            resolvedModel = model;
+            if (useChat) learnedChatModels.add(model);
+            lastModelSuccessAt = Date.now();
+            console.log(`DigitalOcean model: ${model}`);
+            return json;
+          }
+          failures.push(`${model}: HTTP 200 with an empty completion`);
+          console.warn(`${model}: empty completion (${attempt}/${attemptsPerModel})`);
+          if (attempt < attemptsPerModel) { await sleep(retryBaseMs); continue; }
+          break;
+        }
+        const detail = (await response.text()).slice(0, 500);
+        failures.push(`${model}: HTTP ${response.status} ${detail}`);
+        if (response.status === 404 && /not a responses model/i.test(detail) && !useChat) {
+          console.warn(`${model}: not a /responses model; switching to /chat/completions`);
+          useChat = true;
+          learnedChatModels.add(model);
+          attempt--; // a wrong endpoint is not a failed attempt
+          continue;
+        }
+        if (isTransientStatus(response.status)) {
+          if (attempt < attemptsPerModel) {
+            const delayMs = retryBaseMs * 2 ** (attempt - 1);
+            console.warn(`${model}: HTTP ${response.status}; retrying in ${delayMs / 1000}s (${attempt}/${attemptsPerModel})`);
+            await sleep(delayMs);
+            continue;
+          }
+          console.warn(`${model}: HTTP ${response.status} persisted; trying the next model`);
+          break;
+        }
+        const unavailable = (response.status === 403 && /not available|subscription tier/i.test(detail))
+          || (response.status === 404 && /model not found|not a responses model/i.test(detail));
+        if (configured && !unavailable) throw new Error(`DigitalOcean inference failed: ${failures.join(" | ")}`);
+        if (unavailable) unavailableModels.add(model);
+        console.warn(`${model}: ${unavailable ? "unavailable for this tier" : `HTTP ${response.status}`}; trying the next serverless model`);
         break;
       }
-      if (response.ok) {
-        resolvedModel = model;
-        lastModelSuccessAt = Date.now();
-        console.log(`DigitalOcean model: ${model}`);
-        return response.json();
-      }
-      const detail = (await response.text()).slice(0, 500);
-      if (response.status === 429 && requestAttempt < 3) {
-        const delayMs = 30_000 * (2 ** (requestAttempt - 1));
-        console.warn(`${model}: serverless capacity busy; retrying in ${delayMs / 1000}s (${requestAttempt}/3)`);
-        await new Promise(resolve => setTimeout(resolve, delayMs));
-        continue;
-      }
-      failures.push(`${model}: HTTP ${response.status} ${detail}`);
-      if (response.status === 429 && !configured) {
-        console.warn(`${model}: serverless capacity remained busy; trying the next model`);
-        break;
-      }
-      const unavailable = (response.status === 403 && /not available|subscription tier/i.test(detail))
-        || (response.status === 404 && /model not found|not a responses model/i.test(detail));
-      if (configured || !unavailable) throw new Error(`DigitalOcean inference failed: ${failures.join(" | ")}`);
-      console.warn(`${model} is unavailable for this tier; trying the next serverless model`);
-      break;
+    }
+    if (round < rounds) {
+      const delayMs = retryBaseMs * 2 * round;
+      console.warn(`All candidate models failed in round ${round}/${rounds}; waiting ${delayMs / 1000}s before another round`);
+      await sleep(delayMs);
     }
   }
-  throw new Error(`No candidate DigitalOcean serverless model is available: ${failures.join(" | ")}`);
+  throw new Error(`No candidate DigitalOcean serverless model is available: ${failures.slice(-8).join(" | ")}`);
 }
 
 function referenceBlockCount(text) {
@@ -526,38 +583,65 @@ SOURCE PDF TEXT
 ${grounding.text}`;
 }
 
+// Problems that do not make a guide skeletal. They are published with a visible review banner instead of discarding
+// the whole paper after hours of authoring.
+const softProblem = problem => /limitations?|threats? to validity/i.test(problem);
+
+function partCachePath(paper, part) {
+  const dir = process.env.TUTORIAL_CACHE_DIR?.trim();
+  if (!dir) return null;
+  const digest = crypto.createHash("sha256").update(`${part.name}\n${part.instructions}`).digest("hex").slice(0, 10);
+  return path.join(dir, paper.id, `${part.name}-${digest}.md`);
+}
+
 export async function generatePaperTutorial({ paper, pdfPath }) {
   if (!process.env.MODEL_ACCESS_KEY) throw new Error("MODEL_ACCESS_KEY is required for full-paper tutorial authoring");
   const grounding = await extractGroundingText(pdfPath);
   const authoredParts = new Array(generationParts.length);
   const requestedPartConcurrency = Number.parseInt(process.env.TUTORIAL_PART_CONCURRENCY || "1", 10);
   const partConcurrency = Math.min(Math.max(requestedPartConcurrency, 1), generationParts.length);
+  const attemptsPerPart = Math.max(1, intFromEnv("TUTORIAL_PART_ATTEMPTS", 3));
   let nextPart = 0;
   async function authorPartWorker() {
     while (nextPart < generationParts.length) {
       const index = nextPart++;
       const part = generationParts[index];
+      const cachePath = partCachePath(paper, part);
+      if (cachePath && fs.existsSync(cachePath)) {
+        const cached = fs.readFileSync(cachePath, "utf8");
+        if (!partProblems(cached, part).length) {
+          console.log(`${paper.id}/${part.name}: reused ${cached.length} cached characters`);
+          authoredParts[index] = cached;
+          continue;
+        }
+      }
       let problems = [];
-      for (let attempt = 1; attempt <= 2; attempt++) {
+      for (let attempt = 1; attempt <= attemptsPerPart; attempt++) {
         const rawText = outputText(await createModelResponse(promptForPart(paper, grounding, part, problems)))?.trim();
         const text = normalizePrerequisiteReferences(rawText, part);
         problems = partProblems(text, part);
         if (!problems.length) {
           console.log(`${paper.id}/${part.name}: accepted ${text.length} characters`);
           authoredParts[index] = text;
+          if (cachePath) { fs.mkdirSync(path.dirname(cachePath), { recursive: true }); fs.writeFileSync(cachePath, text); }
           break;
         }
-        console.warn(`${paper.id}/${part.name}: attempt ${attempt} failed: ${problems.join("; ")}`);
+        console.warn(`${paper.id}/${part.name}: attempt ${attempt}/${attemptsPerPart} failed: ${problems.join("; ")}`);
       }
       if (!authoredParts[index]) {
-        throw new Error(`${paper.id}/${part.name}: failed quality checks after two attempts: ${problems.join("; ")}`);
+        throw new Error(`${paper.id}/${part.name}: failed quality checks after ${attemptsPerPart} attempts: ${problems.join("; ")}`);
       }
     }
   }
   await Promise.all(Array.from({ length: partConcurrency }, () => authorPartWorker()));
-  const tutorial = `# ${paper.title} - Complete Tutorial\n\n${authoredParts.join("\n\n")}\n`;
+  let tutorial = `# ${paper.title} - Complete Tutorial\n\n${authoredParts.join("\n\n")}\n`;
   const problems = qualityProblems(tutorial, paper.id);
-  if (problems.length) throw new Error(`${paper.id}: assembled tutorial failed quality checks: ${problems.join("; ")}`);
+  const hard = problems.filter(problem => !softProblem(problem));
+  if (hard.length) throw new Error(`${paper.id}: assembled tutorial failed quality checks: ${hard.join("; ")}`);
+  if (problems.length) {
+    console.warn(`${paper.id}: publishing with a review banner: ${problems.join("; ")}`);
+    tutorial = `> **REVIEW NEEDED:** automated checks flagged this guide (${problems.join("; ")}). Read it against the paper before relying on it.\n\n${tutorial}`;
+  }
   return tutorial;
 }
 
