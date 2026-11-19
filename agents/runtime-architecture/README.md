@@ -208,6 +208,10 @@ Write these as quality scenarios in the [decision method](../../architecture-evo
 
 Tenant isolation (pool, schema, database or infrastructure per tenant, the standards, transcripts and caches under tenancy) is in the [tenant-isolation pattern](../tenant-isolation/README.md).
 
+How the runtime calls tools and peer agents (MCP, A2A), and the identity, authorization and gateway layers around them, is in the [connectivity pattern](../connectivity/README.md).
+
+For analytics and warehouse questions specifically (NL2SQL and its alternatives), see the [data-access pattern](../data-access/README.md).
+
 **Business data sources** (kind 7) are the choice you asked to include. There are three ways to use one, and the right one depends on the source:
 
 | Approach | Use when | Cost |
