@@ -2,7 +2,7 @@
 
 An extension of the [evidence-driven decision method](decision-method.md) for one recurring decision: **which language, and which framework (if any), to build an agentic runtime in.** It uses the method's charter, hard gates, evidence register, sensitivity test and evolution triggers, and changes three things that this decision needs.
 
-Evidence behind it: the [language treatise](../agents/languages/README.md) and the [framework comparison](../agents/frameworks/README.md). Customer-neutral: supply your own workloads, constraints and authority.
+Evidence behind it: the [language treatise](../agents/languages/README.md), the [framework comparison](../agents/frameworks/README.md) and the [runtime reference architecture](../agents/runtime-architecture/README.md), which also covers the data-store choice. Customer-neutral: supply your own workloads, constraints and authority.
 
 ## 1. Why this decision needs its own method
 
