@@ -154,6 +154,80 @@ window.ARCHITECTURE_CATALOG = {
       ]
     },
     {
+      id: "agent-runtime",
+      name: "Agent runtime",
+      description: "Loop, sessions, isolation, and the data an agent keeps",
+      components: [
+        {
+          id: "agent-loop",
+          name: "Agent loop: own it or adopt a framework",
+          summary: "Who owns the turn loop, the session log, the permission gate, and cancellation. Evidence: the loop is about a hundred lines; most of a production harness is around it.",
+          options: [
+            { name: "Own loop on provider SDKs", examples: "About 100 lines plus conformance tests; official model SDKs and an MCP SDK", scale: 3, reliability: 3, latency: 3, note: "Full control of the log, permissions, and cancellation. You build durability, tracing, and approvals. The default when the runtime is the product." },
+            { name: "Thin framework library", examples: "Vercel AI SDK, OpenAI Agents SDK, PydanticAI", scale: 3, reliability: 2, latency: 3, note: "Saves provider adapters, schema generation, and an MCP client. Keep it behind an interface: several ship breaking changes monthly (pre-1.0 or fast majors)." },
+            { name: "Durable graph or workflow framework", examples: "LangGraph, Mastra, Microsoft Agent Framework, Google ADK", scale: 3, reliability: 3, latency: 2, note: "Checkpoints, pause and resume, and approvals as features. Heavy dependency trees and framework-shaped state; hard-kill durability was not verified." },
+            { name: "Embedded vendor harness", examples: "Claude Agent SDK (one Claude Code process per session)", scale: 2, reliability: 2, latency: 2, note: "Inherits a mature permission and compaction system. A closed binary of about 354 MB, one model family, and near-daily releases." }
+          ]
+        },
+        {
+          id: "agent-execution-model",
+          name: "Session execution model",
+          summary: "How concurrent sessions share CPU. The language runtime's threading model decides what one busy session can do to the others.",
+          options: [
+            { name: "One session per process", examples: "Local agents; the Claude Agent SDK", scale: 1, reliability: 3, latency: 3, note: "Crash and memory isolation for free. Footprint grows with sessions." },
+            { name: "Many sessions on one event loop", examples: "Node, Python asyncio", scale: 2, reliability: 2, latency: 2, note: "Node has no global lock, but runs JavaScript on one thread per process: a long CPU task stalls every session in it (Python adds the GIL). Fine while the work is I/O; offload CPU work. Measure the noisy-neighbour case." },
+            { name: "Shared-memory threads or lightweight tasks", examples: "Go, Rust, Java virtual threads, C#", scale: 3, reliability: 2, latency: 3, note: "Uses all cores; a CPU-heavy session does not stall the others. Shared mutable state needs care (Rust rejects data races at compile time) and one crash can take the process down." },
+            { name: "Worker pool behind a queue", examples: "Background and long-running tasks", scale: 3, reliability: 3, latency: 1, note: "Durable, scalable, retryable, but not interactive. Combine with one of the above for chat." }
+          ]
+        },
+        {
+          id: "agent-sandbox",
+          name: "Isolation for commands and generated code",
+          summary: "What stops a model-chosen command or generated code from harming the host. Needed whenever the agent can execute.",
+          options: [
+            { name: "In-process interpreter with an allow-list", examples: "smolagents local executor", scale: 1, reliability: 1, latency: 3, note: "Not a security boundary. In a test, an authorised os module let os.system write a file, and a 2-second timeout took 8 seconds. Trusted input only." },
+            { name: "OS sandbox primitives", examples: "Landlock, seccomp, macOS seatbelt", scale: 2, reliability: 2, latency: 3, note: "Direct and fast, one implementation per operating system. Codex and Gemini CLI ship a native sandbox for all three desktop systems." },
+            { name: "Container per session or task", examples: "Docker, Podman", scale: 2, reliability: 3, latency: 2, note: "Strong isolation if configured. Defaults can add no resource or capability limits, so set them explicitly." },
+            { name: "Hosted sandbox or microVM service", examples: "E2B, Modal and similar", scale: 3, reliability: 3, latency: 2, note: "Strongest isolation and elastic capacity. Adds a service dependency, cost, and a network hop." }
+          ]
+        },
+        {
+          id: "agent-state-store",
+          name: "Conversation history and state",
+          summary: "The append-only session log, snapshots, resume, and fork. Cross-session personalization belongs under Memory. Compaction is a read-time view over an unchanged log.",
+          options: [
+            { name: "JSONL file per session", examples: "Claude Code transcripts", scale: 1, reliability: 1, latency: 3, note: "Zero operations and human-readable. One writer, no cross-session queries, retention and erasure by hand." },
+            { name: "Embedded SQL", examples: "SQLite, libSQL", scale: 1, reliability: 2, latency: 3, note: "ACID with JSON functions and one writer. The default in several frameworks that were run (LangGraph, ADK, Mastra). An executed example showed a sequence number as the concurrency token, idempotent tool calls, compaction as a view, and fork." },
+            { name: "Relational server with JSON columns", examples: "PostgreSQL", scale: 2, reliability: 3, latency: 3, note: "Transactions across events and an outbox, SQL audit across sessions, row-level tenant isolation. One primary limits write scale." },
+            { name: "Document or key-value database", examples: "MongoDB, DynamoDB, Firestore, Cosmos DB", scale: 3, reliability: 3, latency: 3, note: "Horizontal scale and managed multi-region. Design the ordered append deliberately (partition by session, sort by sequence, conditional writes); cross-session queries need indexes or export. Offered as a backend by ADK, Microsoft Agent Framework, the OpenAI Agents SDK and Spring AI; not evaluated here." }
+          ]
+        },
+        {
+          id: "agent-data-access",
+          name: "Access to business data sources",
+          summary: "How the agent reaches systems of record. Whatever the pattern, retrieved content is untrusted input: documents can carry instructions aimed at the model.",
+          options: [
+            { name: "Query in place through a tool", examples: "MCP server or API connector, live", scale: 2, reliability: 2, latency: 2, note: "Always fresh and permission-faithful when the source is. Latency and load fall on the source." },
+            { name: "Indexed copy in a knowledge store", examples: "Search or vector index fed from the source", scale: 3, reliability: 3, latency: 3, note: "Fast semantic search. Stale by construction, and a second copy of sensitive data with its own permissions, residency, and erasure duties." },
+            { name: "Hybrid: index to discover, fetch live on use", examples: "Index for retrieval, connector for the current record", scale: 3, reliability: 3, latency: 2, note: "The usual best answer for documents. Two paths to build and test." }
+          ]
+        },
+        {
+          id: "agent-language",
+          name: "Implementation language",
+          summary: "Capacity bands do not separate these: an agent loop is I/O-bound, so every option passes at every band. Decide by deployment shape, official SDKs, protocol SDK tier, packaging, sandboxing, and team. See the selection method.",
+          options: [
+            { name: "Python", examples: "asyncio; richest model and evaluation ecosystem", scale: 3, reliability: 3, latency: 3, note: "Fastest iteration; five of eleven studied harnesses. Global interpreter lock and one thread per event loop: isolate CPU work. Awkward to ship without an interpreter." },
+            { name: "TypeScript on Node", examples: "Claude Code, Gemini CLI, OpenCode", scale: 3, reliability: 3, latency: 3, note: "Five of eleven studied harnesses; official Anthropic SDK and a Tier 1 MCP SDK. Needs Node or a bundled runtime; one JavaScript thread per process, so use process-per-session." },
+            { name: "Go", examples: "Gateways and orchestrators", scale: 3, reliability: 3, latency: 3, note: "Cheap concurrency, context cancellation, one static binary, Tier 1 MCP SDK. No sum types for the state machine." },
+            { name: "Rust", examples: "Codex", scale: 3, reliability: 3, latency: 3, note: "Single binary, memory safety, direct OS sandbox access, Tier 1 MCP SDK. No official Anthropic SDK; slowest to iterate." },
+            { name: "C#", examples: ".NET services; Microsoft Agent Framework", scale: 3, reliability: 3, latency: 3, note: "Official Anthropic SDK and Tier 1 MCP SDK; best when the platform is .NET. Smaller agent open-source community." },
+            { name: "Java", examples: "Spring AI, LangChain4j, virtual threads", scale: 3, reliability: 3, latency: 3, note: "Best when the platform is the JVM. The MCP SDK is Tier 2, behind the others on protocol features." }
+          ]
+        }
+      ]
+    },
+    {
       id: "data",
       name: "Data",
       description: "Transactional state and analytical history",
