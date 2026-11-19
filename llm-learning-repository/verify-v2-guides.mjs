@@ -62,7 +62,8 @@ export function v2Problems(text, id, options = {}) {
     }
   }
   if (text.length < 28_000) problems.push(`only ${text.length} characters; minimum is 28,000`);
-  if (text.length > 70_000) problems.push(`${text.length} characters; maximum is 70,000 (cut padding)`);
+  const maxChars = options.maxChars ?? 70_000;
+  if (text.length > maxChars) problems.push(`${text.length} characters; maximum is ${maxChars.toLocaleString("en-US")} (cut padding)`);
 
   let cursor = -1;
   const headings = compute ? REQUIRED_HEADINGS.map(h => (h === "## Reading map for the PDF" ? "## Reading map for the sources" : h)) : REQUIRED_HEADINGS;

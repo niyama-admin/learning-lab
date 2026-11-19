@@ -59,7 +59,7 @@ const server = http.createServer((req, res) => {
 await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
 process.env.DIGITALOCEAN_BASE_URL = `http://127.0.0.1:${server.address().port}/v1`;
 
-const { generatePaperGuideV2, V2_PARTS, isHardProblem } = await import("./tutorial-authoring-v2.mjs");
+const { generatePaperGuideV2, V2_PARTS, isHardProblem, normalizeHeadings } = await import("./tutorial-authoring-v2.mjs");
 const { v2Problems } = await import("./verify-v2-guides.mjs");
 const { generate } = await import("./weekly-update.mjs");
 
@@ -89,6 +89,35 @@ const researcherCalls = seen.filter(x => x.part === "researcher");
 assert.equal(researcherCalls.length, 2);
 assert.match(researcherCalls[1].prompt, /previous attempt failed these checks: .*Formal setup/);
 console.log("ok  a missing heading is retried and the failure is fed back to the model");
+
+// 2b. A model that copies the brief's description into the heading line (seen from deepseek-v4-pro on 2026-11-19) is
+// normalised, not rejected: "### A minimal version - runnable-looking code ..." becomes "### A minimal version".
+seen.length = 0;
+respond = ({ part }) => (part === "practitioner"
+  ? PARTS[part].replace("## Tutorial 2 - Practitioner understanding", "## Tutorial 2 - Practitioner understanding (for someone who will build or buy)")
+      .replace("### A minimal version", "### A minimal version - runnable-looking code or pseudocode under 70 lines")
+      .replace("### What it costs", "### What it costs: worked arithmetic with every assumption stated")
+  : PARTS[part]);
+text = await make();
+assert.equal(seen.filter(x => x.part === "practitioner").length, 1, "accepted on the first attempt after normalisation");
+assert.match(text, /\n### A minimal version\n/);
+assert.doesNotMatch(text, /runnable-looking code or pseudocode under 70 lines/);
+const practitioner = V2_PARTS.find(p => p.name === "practitioner");
+assert.equal(normalizeHeadings("### What it costs\n### The idea of cost\n", { headings: ["### What it costs", "### The idea"] }), "### What it costs\n### The idea of cost\n", "does not touch a different, longer heading");
+assert.ok(seen.every(x => x.prompt.includes("HEADING LINES MUST BE EXACTLY THESE")), "prompts list the exact headings");
+console.log("ok  description text copied into a heading line is normalised, not rejected");
+
+// 2c. Length is advisory. This model ignores length instructions (18,969 characters against a 13,000 limit in a real run) and
+// retrying rarely shortens it, so an over-long but otherwise valid part is accepted on the first attempt, with the
+// instruction stated in the prompt and a warning logged.
+seen.length = 0;
+const padded = PARTS["map-faq"] + "\n\n" + Array.from({ length: 200 }, (_, i) => `Additional filler sentence number ${i} that restates nothing useful and only adds length.`).join(" ");
+assert.ok(padded.length > V2_PARTS.find(p => p.name === "map-faq").maxChars, "fixture really is over the part ceiling");
+respond = ({ part }) => (part === "map-faq" ? padded : PARTS[part]);
+text = await make();
+assert.equal(seen.filter(x => x.part === "map-faq").length, 1, "no retry for length alone");
+assert.match(seen.find(x => x.part === "map-faq").prompt, /LENGTH: aim for about 5500 characters/);
+console.log("ok  an over-long but valid part is accepted without a retry");
 
 // 3. Old-style (v1) output is rejected, not published.
 respond = ({ part }) => (part === "opening" ? "## Paper at a glance\n\nThe paper matters.\n\n## Concept map\n\nMaterialize **each stage** as a versioned artifact." : PARTS[part]);

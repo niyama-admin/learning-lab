@@ -34,6 +34,8 @@ export const V2_PARTS = [
     name: "opening",
     headings: ["## Read this first", "## The paper in one worked example"],
     minChars: 4_000,
+    targetChars: 8_000,
+    maxChars: 11_500,
     brief: `Write exactly these two sections, in this order.
 ## Read this first - the paper's claim in one plain sentence; who it is for; what the reader will be able to do afterwards (a short list); estimated reading time of this guide; the one thing most people get wrong about this paper; and one sentence saying whether the paper is a peer-reviewed publication or a preprint ONLY if the text says so (otherwise say "venue not stated in the extracted text").
 ## The paper in one worked example - choose ONE concrete example from the paper itself (a task, an input, a prompt, a trace, a table row). Trace it start to finish showing the real inputs and outputs at every step, with short quotations in quote marks (under 25 words each) or close paraphrase. If the paper has no single example, construct one and say plainly "constructed by this guide" and label every constructed number. This section must be at least 2,000 characters and must include one Mermaid diagram of the mechanism followed by "What to notice:".`
@@ -45,6 +47,8 @@ export const V2_PARTS = [
       "### How it works, step by step", "### What the results say", "### What this does not show", "### Teach-back"
     ],
     minChars: 7_000,
+    targetChars: 8_500,
+    maxChars: 12_000,
     brief: `Write exactly these sections, in this order, with these exact headings.
 ## Words you need - a markdown table with the columns Term, Plain definition, Example from the worked example. At least six paper-specific terms.
 ## Tutorial 1 - Intuitive understanding
@@ -62,6 +66,8 @@ export const V2_PARTS = [
       "### How it fails", "### Evaluating your version", "### Adopt, adapt or skip"
     ],
     minChars: 6_000,
+    targetChars: 9_500,
+    maxChars: 13_500,
     brief: `Write exactly these sections, in this order, with these exact headings.
 ## Tutorial 2 - Practitioner understanding (for someone who will build or buy)
 ### The design in concrete terms - data structures, message formats, the paper's actual hyper-parameters and prompts where given, shown concretely.
@@ -79,6 +85,8 @@ export const V2_PARTS = [
       "### What would change my mind"
     ],
     minChars: 6_000,
+    targetChars: 9_000,
+    maxChars: 13_000,
     brief: `Write exactly these sections, in this order, with these exact headings.
 ## Tutorial 3 - Researcher understanding
 ### Formal setup - notation defined once with every symbol explained, and a numeric toy instance labelled "constructed by this guide".
@@ -94,6 +102,8 @@ Do not restate Tutorial 1 or 2; add the formal and evidential content.`
     name: "map-faq",
     headings: ["## Reading map for the PDF", "## Questions readers get stuck on"],
     minChars: 4_500,
+    targetChars: 5_500,
+    maxChars: 8_500,
     brief: `Write exactly these two sections, in this order.
 ## Reading map for the PDF - a markdown table with columns: Section or figure, What it contains, Read / skim / skip on a first pass, and Where this guide answers the questions it raises. Use the paper's real section names from the text.
 ## Questions readers get stuck on - at least EIGHT specific questions a first-time reader would really ask (terminology, numbers, mechanism, "why not just X"). Write each as a heading of the form "### <the question ending with a question mark?>" followed by a 2-6 sentence answer.`
@@ -102,12 +112,26 @@ Do not restate Tutorial 1 or 2; add the formal and evidential content.`
     name: "prereq-close",
     headings: ["## Prerequisites you actually need", "## Where this sits in the curriculum", "## Checkpoint"],
     minChars: 4_000,
+    targetChars: 6_000,
+    maxChars: 9_000,
     brief: `Write exactly these three sections, in this order.
 ## Prerequisites you actually need - three to six blocks, each with the heading "### Prerequisite N - <name>" (N = 1, 2, 3 ...). Only what THIS paper uses. Each block has a short plain explanation, a tiny worked numeric example, and where the paper uses it. Do not pad with generic mathematics.
 ## Where this sits in the curriculum - what to have read before, how this paper differs from the two nearest related papers named in the paper's own related-work discussion, and what to read next.
 ## Checkpoint - five to eight self-test items mixing explain, compute and critique, each answer inside a <details><summary>Answer</summary> ... </details> block.`
   }
 ];
+
+// Models sometimes copy a brief's explanatory text into the heading line ("### A minimal version - runnable-looking code ...").
+// If a line starts with a required heading followed by a separator and extra text, reduce it to the exact heading.
+export function normalizeHeadings(text, part) {
+  if (!text) return text;
+  let out = text;
+  for (const heading of part.headings) {
+    const escaped = heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    out = out.replace(new RegExp(`^${escaped}(?:\\s+(?:-|--|\u2014|\u2013|:)\\s+.*|\\s*\\(.*\\)|\\s*:\\s*.*)$`, "gm"), heading);
+  }
+  return out;
+}
 
 const BANNED = [/Materialize \*\*/, /strongest claim supported by the paper/i, /Research notebook lens/i, /\bTODO\b|\bTBD\b|lorem ipsum/i];
 
@@ -140,6 +164,11 @@ PDF extraction: ${grounding.selectedPages} of ${grounding.pageCount} pages${grou
 
 THIS PART - ${part.brief}
 
+LENGTH: aim for about ${part.targetChars} characters (roughly ${Math.round(part.targetChars / 6)} words) and stay under ${part.maxChars}. Be concise and specific; do not pad, and do not restate earlier sections.
+
+HEADING LINES MUST BE EXACTLY THESE, character for character, with nothing added after them on the same line (the text after a dash in the description above explains what to write; do not copy it into the heading):
+${part.headings.map(h => h).join("\n")}
+
 Output only the requested sections in markdown. Start directly with the first heading. Do not write the paper title or any section that belongs to another part.
 ${context ? `\nWORKED EXAMPLE AND OPENING ALREADY WRITTEN (keep consistent with it; do not repeat it):\n${context}\n` : ""}${previousProblems.length ? `\nA previous attempt failed these checks: ${previousProblems.join("; ")}. Rewrite the whole part and fix every one.\n` : ""}
 SOURCE PAPER TEXT
@@ -157,6 +186,10 @@ function cachePath(paper, part) {
 // Problems that do not make a guide skeletal: publish with a review banner instead of discarding the paper.
 const HARD = [/missing heading/, /heading out of order/, /front matter/, /only \d+ characters/, /Mermaid/, /boilerplate/, /placeholder/, /worked example is under/];
 export const isHardProblem = problem => HARD.some(rx => rx.test(problem));
+
+// Weekly drafts: the spec's 70,000-character ceiling is a padding guard for hand-reviewed guides. The open model writes about
+// 15,000-20,000 characters per part regardless of the instruction, so drafts are allowed more before a review banner is added.
+export const WEEKLY_MAX_GUIDE_CHARS = Number.parseInt(process.env.TUTORIAL_MAX_GUIDE_CHARS ?? "", 10) || 110_000;
 
 export const DRAFT_BANNER = "> **DRAFT - written by an open model from the paper's extracted text.** Structure is machine-checked; numbers are NOT. Check every figure against the PDF before relying on it, and prefer rewriting this guide with the authoring spec if it matters.";
 
@@ -186,20 +219,30 @@ export async function generatePaperGuideV2({ paper, pdfPath, grounding, header =
     let problems = [];
     let accepted;
     for (let attempt = 1; attempt <= attemptsPerPart; attempt++) {
-      const text = outputText(await createModelResponse(promptForPart(paper, grounding, part, part.name === "opening" ? "" : context, problems)))?.trim();
+      let text = outputText(await createModelResponse(promptForPart(paper, grounding, part, part.name === "opening" ? "" : context, problems)))?.trim();
+      text = normalizeHeadings(text, part);
       problems = partProblems(text, part);
       if (!problems.length) { accepted = text; break; }
+
       console.warn(`${paper.id}/${part.name}: attempt ${attempt}/${attemptsPerPart} failed: ${problems.join("; ")}`);
+      // Show what the model actually returned: a rejected part is otherwise undiagnosable from the log alone.
+      const preview = (text ?? "").replace(/\s+/g, " ");
+      console.warn(`${paper.id}/${part.name}: rejected output (${(text ?? "").length} chars) begins: ${preview.slice(0, 240)} ... ends: ${preview.slice(-160)}`);
+      if (process.env.TUTORIAL_DEBUG_DIR) {
+        fs.mkdirSync(process.env.TUTORIAL_DEBUG_DIR, { recursive: true });
+        fs.writeFileSync(path.join(process.env.TUTORIAL_DEBUG_DIR, `${paper.id}-${part.name}-attempt${attempt}.md`), text ?? "");
+      }
     }
     if (!accepted) throw new Error(`${paper.id}/${part.name}: failed checks after ${attemptsPerPart} attempts: ${problems.join("; ")}`);
     console.log(`${paper.id}/${part.name}: accepted ${accepted.length} characters`);
+    if (accepted.length > part.maxChars) console.warn(`${paper.id}/${part.name}: longer than the ${part.maxChars}-character target ceiling; the model did not follow the length instruction (not retried: retries rarely shorten it)`);
     if (file) { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, accepted); }
     written.push(accepted);
     if (part.name === "opening") context = accepted;
   }
   const head = `---\nformat: v2\narxiv: ${paper.id}\n---\n\n# ${paper.title}\n\n> **Paper:** ${paper.authors} - [arXiv abstract](https://arxiv.org/abs/${paper.id}) - [local PDF](${pdfLink})\n${header ? `${header}\n` : ""}>\n${DRAFT_BANNER}\n\n`;
   let text = `${head}${written.join("\n\n")}\n${studyPlan ? `\n${studyPlan}\n` : ""}`;
-  const problems = v2Problems(text, paper.id, { pdfLink });
+  const problems = v2Problems(text, paper.id, { pdfLink, maxChars: WEEKLY_MAX_GUIDE_CHARS });
   const hard = problems.filter(isHardProblem);
   if (hard.length) throw new Error(`${paper.id}: assembled guide failed v2 checks: ${hard.join("; ")}`);
   if (problems.length) {
