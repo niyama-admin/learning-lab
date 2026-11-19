@@ -32,15 +32,19 @@ jobs:
       MODEL_ACCESS_KEY: ${{ secrets.MODEL_ACCESS_KEY }}
       DIGITALOCEAN_MODEL_ID: ${{ vars.DIGITALOCEAN_MODEL_ID }}
       REQUIRE_THOROUGH_TUTORIALS: "true"
-      # Accepted chapter parts are cached so a re-run resumes instead of paying for hours of authoring again.
-      TUTORIAL_CACHE_DIR: ${{ runner.temp }}/tutorial-parts
-      WEEKLY_PR_BODY_PATH: ${{ runner.temp }}/weekly-pr-body.md
     steps:
       - name: Check out main
         uses: actions/checkout@v6
         with:
           ref: main
           fetch-depth: 0
+
+      # The runner context is not available in job-level env, so scratch paths are set here.
+      # Accepted chapter parts are cached so a re-run resumes instead of paying for hours of authoring again.
+      - name: Set scratch paths
+        run: |
+          echo "TUTORIAL_CACHE_DIR=$RUNNER_TEMP/tutorial-parts" >> "$GITHUB_ENV"
+          echo "WEEKLY_PR_BODY_PATH=$RUNNER_TEMP/weekly-pr-body.md" >> "$GITHUB_ENV"
 
       - name: Install PDF text extraction
         run: sudo apt-get update && sudo apt-get install -y poppler-utils
