@@ -125,7 +125,9 @@ Do not restate Tutorial 1 or 2; add the formal and evidential content.`
 // If a line starts with a required heading followed by a separator and extra text, reduce it to the exact heading.
 export function normalizeHeadings(text, part) {
   if (!text) return text;
-  let out = text;
+  // The spec uses an ASCII hyphen in "### Prerequisite N - name"; models often write an en or em dash (seen from
+  // deepseek-v4-pro in the first production run, which then reported "0 prerequisite blocks" for four valid ones).
+  let out = text.replace(/^(### Prerequisite \d+)\s*[\u2013\u2014]\s*/gm, "$1 - ");
   for (const heading of part.headings) {
     const escaped = heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     out = out.replace(new RegExp(`^${escaped}(?:\\s+(?:-|--|\u2014|\u2013|:)\\s+.*|\\s*\\(.*\\)|\\s*:\\s*.*)$`, "gm"), heading);

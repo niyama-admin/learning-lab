@@ -119,6 +119,19 @@ assert.equal(seen.filter(x => x.part === "map-faq").length, 1, "no retry for len
 assert.match(seen.find(x => x.part === "map-faq").prompt, /LENGTH: aim for about 5500 characters/);
 console.log("ok  an over-long but valid part is accepted without a retry");
 
+// 2d. An en or em dash in "### Prerequisite N - name" (seen in the first production run, which reported 0 prerequisite
+// blocks for four valid ones) is normalised to the hyphen the verifier requires.
+{
+  const closing = V2_PARTS.find(p => p.name === "prereq-close");
+  const dashed = PARTS["prereq-close"].replace(/^(### Prerequisite \d+) - /gm, (m, a, i) => `${a} ${i % 2 ? "\u2013" : "\u2014"} `);
+  assert.match(dashed, /### Prerequisite \d [\u2013\u2014] /, "fixture really has en or em dashes");
+  assert.ok((normalizeHeadings(dashed, closing).match(/^### Prerequisite \d+ - /gm) ?? []).length >= 3, "dashes normalised to hyphens");
+  respond = ({ part }) => (part === "prereq-close" ? dashed : PARTS[part]);
+  text = await make();
+  assert.deepEqual(v2Problems(text, ID, { pdfLink }), [], "no prerequisite-count problem after normalisation");
+  console.log("ok  en or em dashes in Prerequisite headings are normalised");
+}
+
 // 3. Old-style (v1) output is rejected, not published.
 respond = ({ part }) => (part === "opening" ? "## Paper at a glance\n\nThe paper matters.\n\n## Concept map\n\nMaterialize **each stage** as a versioned artifact." : PARTS[part]);
 await assert.rejects(make(), /opening: failed checks after 3 attempts/);
