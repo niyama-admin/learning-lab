@@ -107,21 +107,17 @@ assert.equal(normalizeHeadings("### What it costs\n### The idea of cost\n", { he
 assert.ok(seen.every(x => x.prompt.includes("HEADING LINES MUST BE EXACTLY THESE")), "prompts list the exact headings");
 console.log("ok  description text copied into a heading line is normalised, not rejected");
 
-// 2c. An over-long part is retried with the limit stated; if the last attempt is still too long but otherwise valid it is
-// accepted (length is a soft quality target, not a reason to discard the paper).
+// 2c. Length is advisory. This model ignores length instructions (18,969 characters against a 13,000 limit in a real run) and
+// retrying rarely shortens it, so an over-long but otherwise valid part is accepted on the first attempt, with the
+// instruction stated in the prompt and a warning logged.
 seen.length = 0;
-const padded = PARTS["map-faq"] + "\n\n" + "Additional filler sentence number one that restates nothing useful. ".repeat(160).replace(/(number one)/g, (m, g, i) => `number ${i}`);
-respond = ({ part, n }) => (part === "map-faq" && n === 1 ? padded : PARTS[part]);
-text = await make();
-const faqCalls = seen.filter(x => x.part === "map-faq");
-assert.equal(faqCalls.length, 2, "retried once for length");
-assert.match(faqCalls[1].prompt, /too long: \d+ characters; the limit is 8500/);
-assert.match(faqCalls[0].prompt, /LENGTH: aim for about 5500 characters/);
-seen.length = 0;
+const padded = PARTS["map-faq"] + "\n\n" + Array.from({ length: 200 }, (_, i) => `Additional filler sentence number ${i} that restates nothing useful and only adds length.`).join(" ");
+assert.ok(padded.length > V2_PARTS.find(p => p.name === "map-faq").maxChars, "fixture really is over the part ceiling");
 respond = ({ part }) => (part === "map-faq" ? padded : PARTS[part]);
 text = await make();
-assert.equal(seen.filter(x => x.part === "map-faq").length, 3, "three attempts, then accepted as-is");
-console.log("ok  over-long parts are retried with the limit stated, then accepted on the last attempt");
+assert.equal(seen.filter(x => x.part === "map-faq").length, 1, "no retry for length alone");
+assert.match(seen.find(x => x.part === "map-faq").prompt, /LENGTH: aim for about 5500 characters/);
+console.log("ok  an over-long but valid part is accepted without a retry");
 
 // 3. Old-style (v1) output is rejected, not published.
 respond = ({ part }) => (part === "opening" ? "## Paper at a glance\n\nThe paper matters.\n\n## Concept map\n\nMaterialize **each stage** as a versioned artifact." : PARTS[part]);

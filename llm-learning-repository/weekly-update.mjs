@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { generatePaperGuideV2, isHardProblem } from "./tutorial-authoring-v2.mjs";
+import { generatePaperGuideV2, isHardProblem, WEEKLY_MAX_GUIDE_CHARS } from "./tutorial-authoring-v2.mjs";
 import { isV2, v2Problems } from "./verify-v2-guides.mjs";
 
 const root = process.env.LEARNING_REPO_ROOT
@@ -265,7 +265,7 @@ function verify() {
       else {
         const text = fs.readFileSync(guide, "utf8");
         if (isV2(text)) {
-          const problems = v2Problems(text, record.id, { pdfLink: `../papers/${record.id}.pdf` });
+          const problems = v2Problems(text, record.id, { pdfLink: `../papers/${record.id}.pdf`, maxChars: WEEKLY_MAX_GUIDE_CHARS });
           const hard = problems.filter(isHardProblem);
           for (const problem of problems) console.error(`${guide}: ${isHardProblem(problem) ? "FAIL" : "warning"}: ${problem}`);
           failures += hard.length;
