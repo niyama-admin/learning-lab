@@ -1,6 +1,6 @@
 # LLM learning repository
 
-A methodical path from non-technical intuition to practitioner competence and research literacy. The collection contains 39 primary papers in reading order. Every companion guide has three independent passes: intuitive, practitioner, and researcher.
+A methodical path from non-technical intuition to practitioner competence and research literacy. The collection contains 47 primary papers in reading order. Every companion guide has three independent passes: intuitive, practitioner, and researcher.
 
 ## How to use it
 
@@ -18,7 +18,7 @@ The [weekly knowledge workflow](references/weekly-curation-workflow.md) runs eve
 
 ## Guide standard (format v2)
 
-All 39 guides use **format v2** (front matter `format: v2`), written to the rules in [references/guide-authoring-spec-v2.md](references/guide-authoring-spec-v2.md) and enforced by `node verify-v2-guides.mjs`. The aim is that a reader can finish a guide able to explain the idea, build a small version and critique the evidence **without opening the PDF to fill gaps**. Each guide:
+All 47 guides use **format v2** (front matter `format: v2`), written to the rules in [references/guide-authoring-spec-v2.md](references/guide-authoring-spec-v2.md) and enforced by `node verify-v2-guides.mjs`. The aim is that a reader can finish a guide able to explain the idea, build a small version and critique the evidence **without opening the PDF to fill gaps**. Each guide:
 
 - traces one real example from the paper (constructed examples are labelled);
 - defines every term before use;
@@ -125,6 +125,23 @@ How an agent gets accurate, safe answers from an analytics data warehouse (NL2SQ
 | 39 | [From Prompt Injections to SQL Injection Attacks: How Protected is Your LLM-Integrated Web Application?](tutorials/07-data-agents/39-prompt-to-sql-injection.md) | arXiv:2308.01990 |
 
 Papers 35-38 are 2025-2026 preprints or very recent venue papers; the guides say where evidence is thin.
+
+### 08-agent-connectivity
+
+How a runtime calls tools (MCP) and agents (A2A) and governs those calls with identity, authorization and gateways. Start with the [stage brief](tutorials/08-agent-connectivity/README.md); the resulting pattern is in [agents/connectivity](../agents/connectivity/README.md).
+
+| Order | Guide | Source |
+|---:|---|---|
+| 40 | [Progent: Securing AI Agents with Privilege Control](tutorials/08-agent-connectivity/40-progent.md) | arXiv:2504.11703 |
+| 41 | [Model Context Protocol (MCP): Landscape, Security Threats, and Future Research Directions](tutorials/08-agent-connectivity/41-mcp-landscape-threats.md) | arXiv:2503.23278 |
+| 42 | [A First Measurement Study on Authentication Security in Real-World Remote MCP Servers](tutorials/08-agent-connectivity/42-mcp-auth-measurement.md) | arXiv:2605.22333 |
+| 43 | [A2ABreak: Systematic Security Analysis of the A2A Protocol](tutorials/08-agent-connectivity/43-a2abreak.md) | arXiv:2609.10871 |
+| 44 | [Authenticated Delegation and Authorized AI Agents](tutorials/08-agent-connectivity/44-authenticated-delegation.md) | arXiv:2501.09674 |
+| 45 | [Defeating Prompt Injections by Design](tutorials/08-agent-connectivity/45-camel-prompt-injection-by-design.md) | arXiv:2503.18813 |
+| 46 | [Autonomous Action Runtime Management (AARM): A System Specification for Securing AI-Driven Actions at Runtime](tutorials/08-agent-connectivity/46-aarm.md) | arXiv:2602.09433 |
+| 47 | [AgentDojo: A Dynamic Environment to Evaluate Prompt Injection Attacks and Defenses for LLM Agents](tutorials/08-agent-connectivity/47-agentdojo.md) | arXiv:2406.13352 |
+
+Papers 40-47 are 2024-2026 preprints; the guides say where evidence is thin, and which protocol revision each studied.
 
 ## Scope and cautions
 

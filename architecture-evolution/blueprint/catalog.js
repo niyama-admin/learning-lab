@@ -225,6 +225,49 @@ window.ARCHITECTURE_CATALOG = {
           ]
         },
         {
+          id: "agent-tool-protocol",
+          name: "Calling tools: MCP and function calling",
+          summary: "How the runtime reaches tools. MCP revision 2026-07-28 is stateless; authorization is an OAuth profile (resource server, protected resource metadata, RFC 8707 audience, no token passthrough). A 2026 measurement found 40.55% of 7,973 live remote servers exposing tools without authentication. See the connectivity pattern.",
+          options: [
+            { name: "In-process functions", examples: "Native function calling, tools as library code", scale: 3, reliability: 3, latency: 3, note: "Fewest moving parts and no network trust boundary, but tools are tied to the runtime's language and release cycle." },
+            { name: "Local MCP servers over stdio", examples: "Sandboxed child processes on the user's machine", scale: 1, reliability: 2, latency: 3, note: "Good for single-user and desktop agents. A local server is code on the machine: show the command, sandbox it, take credentials from the environment." },
+            { name: "Remote MCP servers called directly", examples: "Streamable HTTP with OAuth per server", scale: 2, reliability: 1, latency: 2, note: "Standard and portable, but every client must implement discovery, registration, PKCE and audience checks, and many public servers have none of it." },
+            { name: "Remote MCP behind an access gateway", examples: "Gateway terminates inbound auth, allow-lists tools, injects credentials", scale: 3, reliability: 3, latency: 2, note: "One enforcement and audit point and vaulted credentials. Check which MCP revisions the product serves and enforce again at the server." }
+          ]
+        },
+        {
+          id: "agent-to-agent",
+          name: "Calling other agents: A2A",
+          summary: "How the runtime delegates to peer agents. A2A v1.0 defines agent cards, tasks and security schemes, but payloads carry no user identity and delegation across agents is left to you. One LLM-assisted analysis reports 11 specification-level vulnerabilities, reviewed by its own authors (arXiv 2609.10871); the user-identity gap is the best supported. No production A2A study found.",
+          options: [
+            { name: "Subagents inside the runtime", examples: "Same process or same trust domain, own context", scale: 3, reliability: 3, latency: 3, note: "No protocol or cross-organisation trust problem. Delegation is your own code; keep the user identity in the call context." },
+            { name: "A2A to agents you operate", examples: "Agent cards, OAuth or mTLS, token exchange with an actor claim", scale: 2, reliability: 2, latency: 2, note: "Interoperable and observable. You must add user-identity propagation; the specification does not define it." },
+            { name: "A2A to partner or third-party agents", examples: "Signed cards, allow-listed peers, gateway in between", scale: 2, reliability: 1, latency: 1, note: "Highest trust risk: verify signed cards, bind credentials to the originating agent, never pass credentials along a chain, treat results as untrusted." }
+          ]
+        },
+        {
+          id: "agent-identity-authorization",
+          name: "Identity and authorization",
+          summary: "Whose rights an agent action uses. Standards: OAuth token exchange (RFC 8693) with an actor claim, resource indicators (RFC 8707), sender-constrained tokens (RFC 9449). Agent-specific delegation items are still drafts or vendor previews. Static API keys are called an antipattern for agent identity in the IETF agent-authentication draft.",
+          options: [
+            { name: "Static API keys or shared service account", examples: "One key in the runtime's config", scale: 3, reliability: 1, latency: 3, note: "Simplest and the weakest: no per-user attribution, long-lived secrets, broad blast radius. Prototype only." },
+            { name: "Agent's own workload identity", examples: "Client credentials, SPIFFE-style identity, Entra Agent ID, cloud workload identity", scale: 3, reliability: 2, latency: 3, note: "Right for autonomous work with no user present. Grant least rights; do not use it to act for a user." },
+            { name: "On behalf of the user via token exchange", examples: "RFC 8693 subject plus actor; AWS or Auth0 on-behalf-of (preview or early access)", scale: 2, reliability: 3, latency: 2, note: "Limits actions to the user's rights and records both identities. More moving parts; vendor features are preview-gated and the agent-specific drafts are not final." },
+            { name: "Per-task least-privilege policy on tool calls", examples: "Cedar or CEL at a gateway; task-scoped policies (Progent); information-flow policies (CaMeL)", scale: 2, reliability: 3, latency: 2, note: "Adds argument-level control against prompt injection. Policy authoring is the cost; CaMeL reports 77.3% task success versus 84.5% undefended on AgentDojo with its best model, with attacks sharply reduced (not formally verified)." }
+          ]
+        },
+        {
+          id: "agent-access-gateway",
+          name: "Access gateway",
+          summary: "A service in front of tools and agents that authenticates, authorises, rate-limits, logs and injects credentials. No independent evaluation of any commercial gateway exists on arXiv; features here come from vendor documentation read 2026-11-19. Databricks documents that workspace MCP endpoints bypass its gateway.",
+          options: [
+            { name: "No gateway: in-runtime checks only", examples: "Policy engine and audit inside the runtime", scale: 2, reliability: 1, latency: 3, note: "Fine for a prototype. Every client must get every check right and nothing stops a bypass." },
+            { name: "Managed cloud gateway", examples: "AWS AgentCore Gateway, Databricks Unity Gateway, Azure API Management, Google Agent Gateway", scale: 3, reliability: 3, latency: 2, note: "Integrated identity, policy and audit with the platform; several features are preview or beta; scope limited to that platform." },
+            { name: "Self-hosted API or AI gateway", examples: "Kong AI Gateway, Envoy-based Agent Router, Cloudflare portals", scale: 3, reliability: 2, latency: 2, note: "Runs across platforms. A2A and MCP revision support differ (Envoy A2A is preview without method-level authorization); you operate it." },
+            { name: "Open-source MCP and agent gateway", examples: "agentgateway, ContextForge, Docker MCP Gateway", scale: 2, reliability: 2, latency: 2, note: "Features known only from READMEs here. Evaluate with your own tests before relying on them." }
+          ]
+        },
+        {
           id: "agent-language",
           name: "Implementation language",
           summary: "Capacity bands do not separate these: an agent loop is I/O-bound, so every option passes at every band. Decide by deployment shape, official SDKs, protocol SDK tier, packaging, sandboxing, and team. See the selection method.",
