@@ -1,0 +1,111 @@
+[
+  {
+    "id": "2611.26450",
+    "title": "A CPU Inside an LLM: Zero-Gradient Compilation of Exact Circuits into Pretrained Weights",
+    "abstract": "Pretrained language models (LMs) remain unreliable on exact multi-digit arithmetic without gradient fine-tuning or external tool interpreters. We introduce closed-form, zero-gradient circuit-grafting primitives that compile deterministic computation directly into pretrained LM weights using zero training examples and zero runtime hooks, while bounding per-layer normalization drift and preserving natural-language (NL) competence. Our construction combines three analytical mechanisms: (1) two-layer Mellin-GLU quadrature over bias-free SwiGLU/GeGLU layers, turning unknown per-token RMSNorm scaling into translation along a log-spaced gate grid ($>250\\times$ dynamic range) with IEEE 754 error bounds; (2) cross-token scale cancellation via signed Chebyshev Indefinite-RoPE self-sink attention and memoryless SiLU-antisymmetric GatedDeltaNet shifts; and (3) axis-aligned width extension ($d \\to d+K$) with $\\sqrt{d/(d+K)}$ norm compensation, Base-1000 canonical BPE emission, and differential $(+254,-256)$ tied unembeddings. An automated 5-stage compiler synthesizes 4-8 digit signed $\\{+,-,\\times\\}$ circuits in constant $\\mathsf{TC}^0$ depth alongside 3-literal Boolean (100%, $N=1{,}728$; plus 42-layer Gemma 4 E4B audits) and 5-bit Majority/Parity (100%) circuits. On 6-digit arithmetic ($N=1{,}200$, BF16), IBM Granite 4.2 3B (1.07M-1.33M active non-zeros, $\\le 0.036\\%$) and Alibaba Qwen 3.5 4B (2.25M-2.39M non-zeros, $\\le 0.057\\%$) reach 99.17% and 100.00% ALU-prefix accuracy (100% with an FP32 sidecar) and 98%-100% mid-sentence resumption, outperforming 12.8K-sample LoRA (42.2% / 61.7%, 0% inline continuation). A factorized block-sparse sidecar holds A100 memory at 7.89 / 10.65 GiB (4.60 / 8.14 GiB under INT8/INT4 + FP32 sidecar) while passing all 14/14 pre-registered $>2$K-token Tango splits ($N=4{,}392$; 0/11,134 OOD triggers).",
+    "published": "2026-11-19T17:18:38Z",
+    "updated": "2026-11-19T17:18:38Z",
+    "authors": [
+      "Tanmay Sah"
+    ],
+    "subjects": [
+      "cs.AI"
+    ],
+    "category": "foundations",
+    "day": "Monday",
+    "categoryLabel": "Foundations and model architecture",
+    "score": 18.8,
+    "guide": "daily-plan/monday-foundations-a-cpu-inside-an-llm-zero-gradient-compilation-of-exact-circuits-into-p.md",
+    "pdf": "papers/2611.26450.pdf"
+  },
+  {
+    "id": "2611.26413",
+    "title": "Sequential Anytime Valid Tests for Efficient Inference-Time Alignment",
+    "abstract": "Inference-time alignment methods, such as Best-of-N (BoN), improve language model outputs by generating multiple candidates per prompt and selecting among them using a reward model. Much of this cost is wasted: a fixed budget is applied to every prompt, although the computation required by prompts varies widely. Adaptive methods halt once sampled answers appear settled, but their thresholds are tuned heuristics with no statistical control over early-stopping errors. We instead seek an anytime-valid stopping rule that takes an error tolerance $α$ as input and halts only once an answer is certified to hold a majority ($θ_a > 1/2$) under the generator's distribution. We aggregate candidates by final answer with a reward-weighted self-consistency (RWSC) score and treat stopping as a sequential test over the resulting clusters. Applying Wald's sequential probability ratio test to these clusters yields SPRT-RWSC, which performs well empirically, but its guarantee fails because the leading answer shifts during sampling, and the run is continuously monitored. Our main contribution, e-RWSC, replaces Wald's test with a betting supermartingale (an e-process) for every answer the policy produces, bounding the probability of ever certifying a non-dominant answer by $α$, uniformly over time and across all answers. The RWSC scores drive the bets, so they affect only how quickly a dominant answer $a^\\star$ is certified, not validity; certification takes $O(\\log(1/α)/d_{\\mathrm{KL}}(θ_{a^\\star}\\|1/2))$ samples. Experiments across several language models, datasets, and reward models confirm the predicted $1/d_{\\mathrm{KL}}$ scaling of cost and show that accuracy improves over baselines at substantially lower token cost.",
+    "published": "2026-11-19T17:00:42Z",
+    "updated": "2026-11-19T17:00:42Z",
+    "authors": [
+      "Vishesh Kumar Singh",
+      "Sayak Ray Chowdhury"
+    ],
+    "subjects": [
+      "cs.LG"
+    ],
+    "category": "building",
+    "day": "Tuesday",
+    "categoryLabel": "Building, retrieval, reasoning, and adaptation",
+    "score": 15.79,
+    "guide": "daily-plan/tuesday-building-sequential-anytime-valid-tests-for-efficient-inference-time-alignment.md",
+    "pdf": "papers/2611.26413.pdf"
+  },
+  {
+    "id": "2611.26311",
+    "title": "SWE-Recreation: Benchmarking Coding Agents for Software Recreation",
+    "abstract": "Agents increasingly operate software and even write it, yet they are almost always told what to achieve: given a goal, a mock-up, or a demonstration. We ask whether an agent can instead understand an unfamiliar product by using it, and then rebuild it. The agent sees only rendered pixels and acts through pointer and keyboard, without access to the DOM, source, logs, or back-end. Within this interface, it explores, generates a replica, and checks its own work before evaluation. We present SWE-Recreation, a benchmark of 54 real applications (28 websites and 26 Android apps) with 1,446 hidden requirements describing multistep, stateful workflows and explicit exclusions for behavior outside the reconstruction scope. A fixed judge grades workflows with pixel evidence; a separate post-hoc judge estimates exploration coverage. Across 54 evaluated applications, five frontier systems reach at most 0.530 weighted fidelity and 22.9% fully reproduced requirements under application-equal averaging. These descriptive results expose both exploration-evidence gaps and implementation shortfalls. Code and data are available at https://github.com/nologistic/recreateanything.",
+    "published": "2026-11-19T16:00:09Z",
+    "updated": "2026-11-19T16:00:09Z",
+    "authors": [
+      "Zhiyao Xu",
+      "Zhanjie Ding",
+      "Hongyao Yu",
+      "Jingyu Xiao"
+    ],
+    "subjects": [
+      "cs.SE"
+    ],
+    "category": "evaluation-code",
+    "day": "Wednesday",
+    "categoryLabel": "Evaluation and source-code benchmarks",
+    "score": 24.79,
+    "guide": "daily-plan/wednesday-evaluation-code-swe-recreation-benchmarking-coding-agents-for-software-recreation.md",
+    "pdf": "papers/2611.26311.pdf"
+  },
+  {
+    "id": "2611.25868",
+    "title": "Generalist Meets Specialists: An Evolving Multimodal Agent with Persistent Tool Orchestration for Traffic Scenario Understanding",
+    "abstract": "Traffic scenario understanding requires combining fine-grained visual evidence with spatial and temporal reasoning. Tool-augmented vision-language models (VLMs) can use specialized perception tools, but effective collaboration faces two challenges: terminal rewards provide limited guidance for intermediate decisions and error recovery, while repeated planning adds unnecessary cost across similar tasks. Echoing the fast-slow dichotomy of human cognition, we propose StarTV-Agent, which combines policy learning with experience evolution to support adaptive reasoning when needed and efficient reuse of prior experience when possible. During training, Role-Sensitive Process Optimization (RSPO) combines process advantages with terminal advantages, while Weakness-Driven Demonstration Learning (WDL) provides validated teacher demonstrations targeting the student's weak questions. During inference, Lightweight Adaptive Workflow Reuse (LAWR) enables a fast path by selecting suitable workflows and binding task-specific arguments and resource references, while a slow ReAct-based path handles tasks without suitable workflows. We further design label-free feedback based on execution completion, workflow adoption, and cost savings to guide workflow reuse and memory updates. Across three challenging benchmarks, StarTV-Agent achieves up to 8.0% relative performance improvement, while reducing token consumption by up to 52.1%.",
+    "published": "2026-11-19T10:20:37Z",
+    "updated": "2026-11-19T10:20:37Z",
+    "authors": [
+      "Linjia Kang",
+      "Binhan Jiang",
+      "Juan Yang",
+      "Zhiqin Song",
+      "Xiangsen Wu",
+      "Qionglin Ren",
+      "Jiang Liu",
+      "Zhongjiang He",
+      "Hao Sun"
+    ],
+    "subjects": [
+      "cs.AI"
+    ],
+    "category": "agents-protocols",
+    "day": "Thursday",
+    "categoryLabel": "Agents, swarms, protocols, and channels",
+    "score": 15.75,
+    "guide": "daily-plan/thursday-agents-protocols-generalist-meets-specialists-an-evolving-multimodal-agent-with-persist.md",
+    "pdf": "papers/2611.25868.pdf"
+  },
+  {
+    "id": "2611.26521",
+    "title": "The Window Lever: Longer Observation Windows Outweigh the Observed Effects of Data, Capacity, and Architecture in Customer Behavior Forecasting",
+    "abstract": "In our experiments on long-horizon customer-behavior forecasting, a longer observation window outweighed the observed effects of more data, more capacity and newer architectures. The window is the weeks of history a model sees before the week it forecasts from. Going from an 8- to a 16-week window adds a raw +0.070 to 0.107 log-space $R^2$ in every family at 1M. Matched test cohorts, which score the same customer-weeks at every window, show this raw comparison understates the gain in every family they cover. The direction holds on five public datasets, four spanning over a year (ridge and our transformer on all five). On our internal data, longer windows admit up to 10% more and colder training customers, which matching does not fix. Our design does not separate window length from calendar coverage, because every test anchor (the week a forecast is made from) falls in one eight-week band. On training-period anchors, the weekly ridge probe's gain persists outside the holiday season, keeping about 72% of it. We therefore report a robust positive association with longer windows and do not identify the magnitude of a calendar-independent history effect. Of four internally registered predictions, the only fully blind one failed. An activity-mixture model predicted +0.014 from 24 to 32 weeks; the weekly-aggregate probe returned -0.0004. For the sequence families, the other three levers are about an order of magnitude smaller, bounded and unresolved. Their observed effects are at most 0.006 between the nominal 1M and 10M tiers and 0.0052 among five sequence families at 16 weeks with clocks as built, both single-seed on the full test split, and 0.006 for capacity on three-seed means. These are observed intervals, not equivalence bounds. Our claim is the order-of-magnitude contrast between the window and those bounds. A team building on this class of data should start by lengthening the window.",
+    "published": "2026-11-19T18:00:11Z",
+    "updated": "2026-11-19T18:00:11Z",
+    "authors": [
+      "Tara Sowrirajan",
+      "Yanqiao Wang"
+    ],
+    "subjects": [
+      "cs.LG",
+      "cs.IR"
+    ],
+    "category": "small-business",
+    "day": "Friday",
+    "categoryLabel": "Small-business applications and human productivity",
+    "score": 8.8,
+    "guide": "daily-plan/friday-small-business-the-window-lever-longer-observation-windows-outweigh-the-observed-effe.md",
+    "pdf": "papers/2611.26521.pdf"
+  }
+]

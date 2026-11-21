@@ -4,3 +4,4 @@ Saturday-generated, human-reviewed additions to the core curriculum.
 
 | Week ending | Selected papers |
 |---|---:|
+| [2026-11-21](2026-11-21/README.md) | 5 |
