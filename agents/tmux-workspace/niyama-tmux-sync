@@ -1,0 +1,184 @@
+#!/usr/bin/env python3
+"""Print the claude agents table and keep the bottom session panes on the sessions that matter, as an LRU cache.
+Priority: 1) recent activity (working now, or a transcript write in the last ACTIVITY seconds), 2) status
+(needs input > working > finished), 3) recency. The least recently used pane is evicted first.
+Usage: niyama-tmux-sync <session_pane[:footer_pane]> ...   (env: REPO)"""
+import glob, json, os, shutil, subprocess, sys, time
+
+ACTIVE = {"working", "blocked", "waiting", "needs_input"}
+PLACEHOLDER = "echo 'no active session - waiting for one'; exec sleep 1000000"
+repo = os.environ.get("REPO", os.getcwd())
+pairs = [a.split(":") for a in sys.argv[1:]]
+panes = [x[0] for x in pairs]
+foot = {x[0]: x[1] for x in pairs if len(x) > 1}
+n = len(panes)
+
+MARGIN = 60            # swap one session for another of the same activity+status only if >= this many seconds fresher
+ACTIVITY = 1800        # "recently active" = working now, or a transcript write in the last 30 min
+
+def _iso(ts):
+    from datetime import datetime
+    try:
+        return datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
+    except Exception:
+        return 0.0
+
+def last_write(x):
+    """Last real activity: timestamp of the newest user/assistant message in the transcript.
+    File mtime is NOT used: attaching a viewer appends bookkeeping entries, which would keep a displayed
+    session looking fresh forever. Falls back to the job state file, then start time."""
+    best = x.get("startedAt", 0) / 1000
+    try:
+        best = max(best, os.path.getmtime(os.path.expanduser("~/.claude/jobs/%s/state.json" % x.get("id", "none"))))
+    except OSError:
+        pass
+    for f in glob.glob(os.path.expanduser("~/.claude/projects/*/%s.jsonl" % x.get("sessionId", "none"))):
+        try:
+            size = os.path.getsize(f)
+            for chunk in (262144, 4194304):               # widen the tail if no message fits in the first read
+                with open(f, "rb") as fh:
+                    fh.seek(max(0, size - chunk))
+                    lines = fh.read().split(b"\n")
+                found = 0.0
+                for ln in reversed(lines[1:] if size > chunk else lines):
+                    if b'"type":"user"' not in ln and b'"type":"assistant"' not in ln:
+                        continue
+                    try:
+                        d = json.loads(ln)
+                    except Exception:
+                        continue
+                    if d.get("type") in ("user", "assistant") and d.get("timestamp"):
+                        found = _iso(d["timestamp"])
+                        break
+                if found:
+                    best = max(best, found)
+                    break
+        except OSError:
+            pass
+    return best
+
+def load_excludes():
+    try:
+        lines = open(os.path.expanduser("~/.config/niyama-tmux/exclude")).read().splitlines()
+    except OSError:
+        return []
+    return [l.split("#", 1)[0].strip().lower() for l in lines if l.split("#", 1)[0].strip()]
+
+EXCLUDE = load_excludes()
+
+def excluded(x):
+    ident = (x.get("id", "") + " " + x.get("sessionId", "")).lower()
+    name = x.get("name", "").lower()
+    return any(ident.startswith(t) or x.get("sessionId", "").lower().startswith(t) or t in name for t in EXCLUDE)
+
+def tm(*a):
+    return subprocess.run(["tmux", *a], capture_output=True, text=True).stdout.strip()
+
+r = subprocess.run(["claude", "agents", "--json", "--all"], capture_output=True, text=True)
+try:
+    agents = json.loads(r.stdout)
+except Exception:
+    agents = None  # transient failure: show nothing new, change nothing
+
+if agents is not None:
+    agents.sort(key=lambda x: x.get("startedAt", 0), reverse=True)
+    w = shutil.get_terminal_size().columns
+    print("%-9s %-11s %-9s %s" % ("ID", "KIND", "STATE", "NAME"))
+    for x in agents:
+        row = "%-9s %-11s %-9s %s" % (str(x.get("id", x.get("pid", "")))[:8], x["kind"],
+                                      x.get("state") or x.get("status", ""), x.get("name", ""))
+        print(row[:w])
+
+    byid = {x["id"]: x for x in agents}
+    _lw = {}
+    def lw(x):
+        if x["id"] not in _lw:
+            _lw[x["id"]] = last_write(x)
+        return _lw[x["id"]]
+
+    def tier(x):
+        """Status: 2 = needs input, 1 = working, 0 = finished."""
+        st = x.get("state")
+        return 2 if st in ACTIVE and st != "working" else 1 if st == "working" else 0
+
+    def fresh(x):
+        return x.get("state") == "working" or lw(x) >= time.time() - ACTIVITY
+
+    def rank(sid):
+        """(recently active?, status, last write) - compared left to right."""
+        x = byid.get(sid)
+        return (-1, -1, 0.0) if x is None else (int(fresh(x)), tier(x), lw(x))
+
+    def fresher(nid, vid, margin):
+        rn, rv = rank(nid), rank(vid)
+        return rn[:2] > rv[:2] or (rn[:2] == rv[:2] and rn[2] - rv[2] > margin)
+
+    def candidate(x):
+        if x.get("kind") != "background" or excluded(x):
+            return False
+        return x.get("state") in ACTIVE or fresh(x)          # waiting sessions stay eligible (lowest priority once stale)
+    active = [x for x in agents if candidate(x)]
+    active.sort(key=lambda x: rank(x["id"]), reverse=True)    # recently active first, then needs input > working > finished, then freshest
+
+    cur, prev = {}, {}
+    for p in panes:
+        if not tm("display", "-p", "-t", p, "#{pane_id}"):
+            continue  # pane gone
+        dead = tm("display", "-p", "-t", p, "#{pane_dead}") == "1"
+        prev[p] = tm("display", "-p", "-t", p, "#{@sid}")
+        cur[p] = "" if dead else prev[p]
+
+    # --- LRU over the pane slots ---
+    # Each active session that is not on screen is a miss; it evicts the lowest-priority, least recently used pane
+    # (free/dead slots first). Recent activity outranks status; status only orders sessions that are equally active.
+    for p, sid in list(cur.items()):
+        if sid and sid in byid and excluded(byid[sid]):
+            cur[p] = ""; prev[p] = ""            # treat as an empty slot: replaced first, else shows the idle placeholder
+    shown = {sid for sid in cur.values() if sid}
+    misses = [x["id"] for x in active if x["id"] not in shown]       # `active` is already best-first
+    # never swap the pane you are focused on (you may be typing in it)
+    locked = {p for p in cur if tm("display", "-p", "-t", p, "#{pane_active}#{window_active}#{session_attached}") == "111"}
+    victims = sorted((p for p in cur if p not in locked),
+                     key=lambda p: (-2, -2, 0.0) if cur[p] in ("", "free") else rank(cur[p]))
+    while misses and victims:
+        p, nid = victims[0], misses[0]
+        if cur[p] not in ("", "free"):
+            margin = MARGIN if rank(cur[p])[1] >= 1 else 0           # finished/unknown victims give way to anything fresher
+            if not fresher(nid, cur[p], margin):
+                break                                                # every later miss ranks lower still
+        victims.pop(0); misses.pop(0)
+        tm("respawn-pane", "-k", "-t", p, "-c", repo, f"claude attach {nid}")
+        tm("set-option", "-p", "-t", p, "@sid", nid)
+        cur[p] = nid
+    for p in victims:                                              # leftover empty/dead slots
+        if cur[p] != "":
+            continue
+        last = prev[p]
+        if last and last != "free":                                # process exited: reattach what it was showing
+            tm("respawn-pane", "-k", "-t", p, "-c", repo, f"claude attach {last}")
+        elif last != "free":
+            tm("respawn-pane", "-k", "-t", p, "-c", repo, PLACEHOLDER)
+            tm("set-option", "-p", "-t", p, "@sid", "free")
+
+    # top border label: "<session name> \u00b7 <state>"; footer strip: worktree (border label) + branch (content)
+    LABEL = {"working": "working", "blocked": "needs input", "done": "done"}
+    for p in panes:
+        if not tm("display", "-p", "-t", p, "#{pane_id}"):
+            continue
+        sid = tm("display", "-p", "-t", p, "#{@sid}")
+        x = byid.get(sid)
+        if x:
+            st = x.get("state") or x.get("status", "")
+            label = "%s \u00b7 %s" % (x.get("name", sid), LABEL.get(st, st))
+            cwd = x.get("cwd", "")
+            wt = cwd.split("/.claude/worktrees/", 1)[1].split("/")[0] if "/.claude/worktrees/" in cwd else "main"
+            br = subprocess.run(["git", "-C", cwd, "rev-parse", "--abbrev-ref", "HEAD"],
+                                capture_output=True, text=True).stdout.strip() if cwd else ""
+            wlabel = "worktree \u00b7 " + wt
+        else:
+            label, wlabel, br = "idle slot", "", ""
+        tm("set-option", "-p", "-t", p, "@label", label)
+        f = foot.get(p)
+        if f:
+            tm("set-option", "-p", "-t", f, "@label", wlabel)
+            tm("set-option", "-p", "-t", f, "@branch", ("branch: " + br) if br else "")
