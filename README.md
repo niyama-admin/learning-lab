@@ -28,6 +28,7 @@ The existing collections remain stable at the repository root. Broader areas pro
 | [Experiments](experiments/README.md) | Reproducible prototypes and evaluations |
 | [Patterns](patterns/README.md) | Reusable engineering patterns |
 | [Reading notes](reading-notes/README.md) | Guided notes and learning plans |
+| [Devtools](devtools/README.md) | Small tools for working with agents and infrastructure day to day |
 
 ```mermaid
 flowchart TB
