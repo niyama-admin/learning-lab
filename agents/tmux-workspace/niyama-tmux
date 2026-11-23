@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+# Niyama tmux workspace: k8s watch | claude agents | brew + terminal
+# Usage: niyama-tmux [session-name]     (re-running attaches to the existing session)
+# Overrides (env): REPO, LOG_NS, LOG_SELECTOR, SYNC_SECS, NO_ATTACH=1
+set -euo pipefail
+
+S="${1:-niyama}"
+REPO="${REPO:-$PWD}"                          # directory every pane starts in
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LOG_NS="${LOG_NS:-default}"            # namespace whose logs the right-hand k8s pane follows
+LOG_SELECTOR="${LOG_SELECTOR:-app=api}"     # label selector of the workload to follow
+
+attach() { [ "${NO_ATTACH:-}" = 1 ] && exit 0; if [ -n "${TMUX:-}" ]; then tmux switch-client -t "$S"; else tmux attach -t "$S"; fi; }
+
+if tmux has-session -t "$S" 2>/dev/null; then attach; exit 0; fi
+
+# refresh loop (macOS has no `watch` by default)
+loop() { echo "while true; do clear; $1; sleep ${2:-3}; done"; }
+send() { tmux send-keys -t "$1" "$2" C-m; }
+title() { tmux select-pane -t "$1" -T "$2"; }
+
+tmux new-session -d -s "$S" -n k8s -c "$REPO"
+tmux set-option -t "$S" -g mouse on
+tmux set-option -t "$S" -g pane-border-status top
+tmux set-option -t "$S" -g pane-border-format ' #{?@label,#{@label},#{pane_title}} '
+tmux set-option -t "$S" -g history-limit 50000
+
+# ── Window 1: k8s ── pods (top-left) | namespaces (bottom-left) | service logs (right, full height)
+P_PODS=$(tmux display -p -t "$S:k8s" '#{pane_id}')
+P_LOGS=$(tmux split-window -h -p 55 -t "$P_PODS" -c "$REPO" -P -F '#{pane_id}')
+P_NS=$(tmux split-window -v -p 40 -t "$P_PODS" -c "$REPO" -P -F '#{pane_id}')
+send "$P_PODS" "$(loop 'kubectl get pods -A -o wide --sort-by=.metadata.creationTimestamp | tail -n 40')"
+send "$P_NS"   "$(loop 'kubectl get ns' 10)"
+send "$P_LOGS" "kubectl logs -f -n $LOG_NS -l $LOG_SELECTOR --all-containers --tail=100 --max-log-requests=20 --prefix"
+title "$P_PODS" pods; title "$P_NS" namespaces; title "$P_LOGS" "service logs"
+
+# ── Window 2: claude ── top: agents view (left) + terminal (right); bottom row: 5 newest active bg sessions
+# Top-left shows the real `claude agents` view; a background loop runs niyama-tmux-sync every ${SYNC_SECS:-10}s to re-point the right
+# session panes at the newest working/blocked background sessions (sticky - panes still in the top 4 are untouched).
+tmux new-window -t "$S" -n claude -c "$REPO"
+tmux set-window-option -t "$S:claude" pane-border-status top   # name · status on top; worktree + branch in a thin strip under each session pane
+A=$(tmux display -p -t "$S:claude" '#{pane_id}')                          # top-left: agents view
+R1=$(tmux split-window -v -p 62 -t "$A" -c "$REPO" -P -F '#{pane_id}')       # bottom row: 5 session panes
+TERM_P=$(tmux split-window -h -p 40 -t "$A" -c "$REPO" -P -F '#{pane_id}')   # top-right: terminal
+R2=$(tmux split-window -h -p 80 -t "$R1" -c "$REPO" -P -F '#{pane_id}')
+R3=$(tmux split-window -h -p 75 -t "$R2" -c "$REPO" -P -F '#{pane_id}')
+R4=$(tmux split-window -h -p 66 -t "$R3" -c "$REPO" -P -F '#{pane_id}')
+R5=$(tmux split-window -h -p 50 -t "$R4" -c "$REPO" -P -F '#{pane_id}')
+FOOT='while :; do printf "\033[H\033[2K%s" "$(tmux display -p -t "$TMUX_PANE" "#{@branch}")"; sleep 3; done'
+PAIRS=""
+for p in "$R1" "$R2" "$R3" "$R4" "$R5"; do
+  tmux set-option -p -t "$p" remain-on-exit on
+  F=$(tmux split-window -v -l 1 -t "$p" -c "$REPO" -P -F '#{pane_id}' "$FOOT")
+  PAIRS="$PAIRS $p:$F"
+done
+send "$A" "claude agents"
+# background sync loop: lives as long as the tmux session does; output discarded
+tmux run-shell -b "export REPO='$REPO'; while tmux has-session -t '$S' 2>/dev/null; do $SELF_DIR/niyama-tmux-sync$PAIRS >/dev/null 2>&1; sleep ${SYNC_SECS:-10}; done"
+title "$A" "agents"; title "$TERM_P" "terminal"
+
+# ── Window 3: homebrew + terminal
+tmux new-window -t "$S" -n tools -c "$REPO"
+H=$(tmux display -p -t "$S:tools" '#{pane_id}')
+T=$(tmux split-window -h -p 50 -t "$H" -c "$REPO" -P -F '#{pane_id}')
+send "$H" "brew update && brew outdated"
+title "$H" homebrew; title "$T" terminal
+
+tmux select-window -t "$S:claude"
+tmux select-pane -t "$R1"
+attach
