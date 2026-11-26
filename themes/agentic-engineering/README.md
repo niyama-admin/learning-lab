@@ -38,6 +38,10 @@ Enable teams to use coding and delivery agents to accelerate software work while
 - Treat generated code as untrusted until it passes the same checks as human-written code.
 - Prefer small, reversible changes with observable outcomes.
 
+## Related learning-lab material
+
+- [Small language models for the enterprise](../../agents/small-language-models/README.md): fine-tuning options, tools, deployment vehicles and the SLM's role in an agent system.
+
 ## Arghyam reference material
 
 - [Agentic engineering workflow](https://github.com/niyama-admin/consulting/blob/main/2026/2026-08-Arghyam-1/docs/agentic-engineering-workflow.md)
