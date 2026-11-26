@@ -4,13 +4,15 @@ What it takes to build a small language model (SLM) for an enterprise, deploy it
 
 Status: written 2026-11-26. Tool, licence and price facts move monthly; each file says what was verified and what was not. Anything marked **unverified** was not confirmed against a primary source. Treat anything older than 90 days as a prompt to re-check. Nothing here is legal advice.
 
+**Evidence policy.** Factual statements link to their source. Statements that are this guide's recommendation are labelled **Judgment**, and inputs we chose for arithmetic are labelled **Assumption**. Preprints, vendor claims and our own internal measurements are named as such. If a claim has neither a link nor a label, treat it as a defect and report it.
+
 ## 1. The answer first
 
-**Fine-tune an SLM to fix a behaviour, never to store knowledge, and only after prompting and context have been tried and measured.** The strongest verified evidence supports fine-tuned small models on narrow, well-defined tasks (output format, extraction, classification, routing, style). It does not support them as a knowledge store: a study comparing the two found retrieval beat unsupervised fine-tuning on both known and new facts ([Ovadia et al., arXiv 2312.05934](https://arxiv.org/abs/2312.05934)). Most published "small beats frontier" results are vendor-reported (see [01](01-options-and-trade-offs.md#6-what-the-evidence-says)).
+**Fine-tune an SLM to fix a behaviour, never to store knowledge, and only after prompting and context have been tried and measured.** The strongest verified evidence supports fine-tuned small models on narrow, well-defined tasks (output format, extraction, classification, routing, style). It does not support them as a knowledge store: a study comparing the two found retrieval beat unsupervised fine-tuning on both known and new facts ([Ovadia et al., arXiv 2312.05934](https://arxiv.org/abs/2312.05934)). Most published "small beats frontier" results are vendor-reported (see [01](01-options-and-trade-offs.md#8-what-the-evidence-says)).
 
-**The model is the cheap part.** A LoRA (low-rank adaptation) run on a 4B to 8B model costs single-digit to low-double-digit dollars of GPU time ([worked arithmetic in 04](04-build-and-deploy-playbook.md#3-what-it-costs)). What costs money and calendar time is the labelled data, the evaluation set that tells you whether the model is better, the serving platform, and the people who keep all three current. A team that budgets for GPUs and not for those is budgeting for the wrong thing.
+**The model is the cheap part.** Under stated assumptions, a LoRA (low-rank adaptation) run on a 4B to 8B model costs single-digit to low-double-digit dollars of GPU time ([worked arithmetic in 04](04-build-and-deploy-playbook.md#3-what-it-costs); the throughput and prices are assumptions). What costs money and calendar time is the labelled data, the evaluation set that tells you whether the model is better, the serving platform, and the people who keep all three current. A team that budgets for GPUs and not for those is budgeting for the wrong thing.
 
-**Decision ladder, cheapest rung first:**
+**Decision ladder, cheapest rung first (Judgment; the evidence for the ordering is in [01 §8](01-options-and-trade-offs.md#8-what-the-evidence-says)):**
 
 | Rung | Change | Try it when | Reversible in |
 |---|---|---|---|
@@ -22,7 +24,7 @@ Status: written 2026-11-26. Tool, licence and price facts move monthly; each fil
 
 Most enterprises should stop at rung 3 for most tasks and use rung 4 for one or two high-volume, narrow ones. Rung 5 is rarely justified by anything an enterprise knows today.
 
-**What you are buying with an SLM, in order of how often it is the real reason:**
+**What you are buying with an SLM (Judgment: the order is our experience, not a measured ranking):**
 
 1. **Data stays where it is.** The model runs inside your boundary or on the user's device. This is a procurement and privacy win, not an accuracy win.
 2. **Cost and latency at volume.** A 4B to 8B model on one GPU (or a laptop) answers in a fraction of the time and cost of a large hosted model, for the narrow task it was tuned on.
@@ -38,7 +40,7 @@ What you give up: general capability, free upgrades when a better base model shi
 | A task definition a machine can score | An output schema plus deterministic checks (exact match, parsers, invariants). Not "looks good" | [04 §1](04-build-and-deploy-playbook.md#1-the-phases) |
 | Labelled data | Hundreds to low thousands of examples for a narrow task is the usual range (**not verified against a source**; treat as a starting hypothesis and measure the learning curve) | [04 §2](04-build-and-deploy-playbook.md#2-data) |
 | A held-out evaluation set | Split by the thing you will meet new in production (a new customer, a new format), not by file | [04 §4](04-build-and-deploy-playbook.md#4-evaluation) |
-| A base model with a licence you can live with | Apache 2.0 families are simplest; custom licences carry attribution and use restrictions into your derivative | [01 §4](01-options-and-trade-offs.md#4-choosing-a-base-model) |
+| A base model with a licence you can live with | Apache 2.0 families are simplest; custom licences carry attribution and use restrictions into your derivative | [01 §6](01-options-and-trade-offs.md#6-choosing-a-base-model) |
 | Training compute | One 24 to 80 GB GPU for LoRA on 4B to 14B; an Apple-silicon laptop with enough memory works for small runs | [02 §1](02-tools.md#1-training-tools) |
 | A vehicle: artifact plus runtime plus channel | Adapter or merged weights, quantized, served by vLLM, llama.cpp, Ollama or an on-device runtime | [03](03-vehicles.md) |
 | Operations | Versioning, rollback, drift monitoring, re-evaluation on every base or data change | [04 §6](04-build-and-deploy-playbook.md#6-operating-it) |
@@ -48,10 +50,13 @@ What you give up: general capability, free upgrades when a better base model shi
 
 | File | Question it answers |
 |---|---|
-| [01 Options and trade-offs](01-options-and-trade-offs.md) | Which customisation method, which base model, and what does each cost you? Pros and cons side by side, plus the evidence |
+| [01 Options and trade-offs](01-options-and-trade-offs.md) | Which customisation method, which base model, and what does each cost you? Pros and cons side by side, when to consider an SLM and when not, architecture-level techniques such as mixture of experts, plus the evidence |
 | [02 Tools](02-tools.md) | Which tools train, which host training, and what tools can the resulting model call? |
 | [03 Vehicles](03-vehicles.md) | What carries an SLM to a user: the artifact, the runtime, the delivery channel, and the role it plays in an agent system |
+| [Technique explainers](techniques/README.md) | What each technique is (LoRA, QLoRA, DoRA, SFT, preference tuning, RL with verifiable rewards, distillation, quantization, mixture of experts, merging, pruning, continued pretraining, constrained decoding), explained at three levels: intuitive, practitioner, researcher |
 | [04 Build and deploy playbook](04-build-and-deploy-playbook.md) | Phases, data, cost arithmetic, evaluation, governance, operations, and a measured case from our own experiments |
+| [05 Neural network anatomy and quantization](05-neural-network-anatomy-and-quantization.md) | What a model is made of (neurons, layers, attention, MLP), where the parameters and memory go, what is tunable by whom, and what quantization does, with a worked 4-bit example. Read first if "weights" or "bits per weight" are fuzzy |
+| [06 Algorithm or model?](06-algorithm-or-model-use-cases.md) | Is a model's behaviour the same as an algorithm's, should an SLM replace a deterministic algorithm, and where it fits in an app, with network root-cause and personal cash-flow use cases. Every answer is sourced |
 
 ## 4. How this connects to the rest of the lab
 

@@ -38,11 +38,11 @@ Data decides the outcome more than the model or the trainer.
 |---|---|
 | How much? | For a narrow task, hundreds to low thousands of examples is the usual starting range. **This is a practitioner rule of thumb; no source was verified in the research pass.** Measure instead: train on 25, 50, 100 percent of your data and plot the held-out score. If it is still rising, get more data; if flat, the problem is data quality or task definition |
 | Where from? | Real production examples (best, but check rights), carefully generated synthetic examples, and your own deterministic systems as teachers (a rule-based parser that labels documents is a free labeller) |
-| Use a frontier model to write training targets? | Read the model provider's terms first: some restrict using outputs to train competing models. Distilling from an open-weight teacher with a permissive licence avoids the question |
+| Use a frontier model to write training targets? | Read the model provider's terms first for any limit on using its outputs to train other models (we have not verified any specific provider's clause). Distilling from an open-weight teacher with a permissive licence avoids the question |
 | Labelling effort | Illustrative: 1,000 examples at 3 minutes of expert review each is 50 hours; budget this, it is usually the biggest line |
 | Include negatives | Examples where the right answer is "unknown", "unsupported", or "ask". Without them the model never abstains (our measured baseline abstained on none of the unsupported layouts) |
 | Train and serve identically | Same preprocessing, same extractor, same system prompt and chat template at training and inference. If the upstream extractor changes, rebuild the dataset |
-| Sensitive data | Weights trained on real personal or customer data can leak it. Tag such weights local-only and do not distribute them, or train only on synthetic data for anything that ships |
+| Sensitive data | **Judgment (our own privacy rule, not a measured risk):** treat weights trained on real personal or customer data as able to carry it. Tag such weights local-only and do not distribute them, or train only on synthetic data for anything that ships |
 | Splitting | Hold out whole sources (an institution, a customer, a format, a generator), never random rows. Random splits of data that share a generator report fantasy numbers |
 
 ## 3. What it costs
@@ -51,20 +51,20 @@ Data decides the outcome more than the model or the trainer.
 
 - Tokens processed: 3,000 x 1,500 x 3 = 13,500,000.
 - Time: 13,500,000 / 3,000 = 4,500 seconds, about 1.25 hours.
-- Cost at $2.49 per hour (a median H100 on-demand price as of August 2026 from a third-party index) is about $3.10; at $4.50 per hour (one provider's listed H100 price) about $5.60.
+- Cost at $2.49 per hour (a median H100 on-demand price as of August 2026 from a [third-party index](https://alpha-one-index.github.io/ai-infra-index/specs/cloud-gpu-pricing.html)) is about $3.10; at $4.50 per hour (one provider's listed H100 price, [Crusoe via OMR](https://omr.com/en/reviews/product/crusoe-cloud/pricing)) about $5.60.
 - Twenty experimental runs: about $60 to $115.
 
-The throughput figure is an assumption and varies several-fold with sequence length, batching and library. The conclusion that survives any plausible change is that **training compute is a rounding error next to labour.** Indicative GPU hourly bands from the research pass (secondary sources, none dated November 2026): L40S $1 to 1.5, A100 $1.2 to 2.3, H100 $2 to 4.5, H200 $2.3 to 5.4.
+The throughput figure is an assumption and varies several-fold with sequence length, batching and library. The conclusion that survives any plausible change is that **training compute is a rounding error next to labour.** Indicative GPU hourly bands from our research pass (secondary sources, none dated November 2026): L40S $1 to 1.5, A100 $1.2 to 2.3, H100 $2 to 4.5, H200 $2.3 to 5.4, drawn from [Runpod](https://www.runpod.io/gpu-cloud/pricing), [Crusoe via OMR](https://omr.com/en/reviews/product/crusoe-cloud/pricing) and [Gcore](https://gcore.com/pricing/ai) price pages.
 
-**Serving, worked example.** One L40S at $1.50 per hour, always on: 730 hours x $1.50 = about $1,100 per month; one H100 at $2.49: about $1,820 per month. Against a hosted small model at an assumed $0.30 per million tokens (illustrative), the L40S pays back above $1,100 / $0.30 = about 3.7 billion tokens per month, an average of about 1,400 tokens per second around the clock. Below that volume the hosted option is cheaper on cost alone; you choose self-hosting for privacy, control or latency, not for savings, unless volume is high. Sharing one GPU across many adapters (multi-LoRA) improves the sums for many small tasks.
+**Serving, worked example.** **Assumption:** one L40S at $1.50 per hour (the price [Crusoe lists via OMR](https://omr.com/en/reviews/product/crusoe-cloud/pricing)), always on: 730 hours x $1.50 = about $1,100 per month; one H100 at the $2.49 median above: about $1,820 per month. Against a hosted small model at an assumed $0.30 per million tokens (illustrative), the L40S pays back above $1,100 / $0.30 = about 3.7 billion tokens per month, an average of about 1,400 tokens per second around the clock. Below that volume the hosted option is cheaper on cost alone; you choose self-hosting for privacy, control or latency, not for savings, unless volume is high. Sharing one GPU across many adapters (multi-LoRA) improves the sums for many small tasks.
 
-**People.** Plan for a data owner (labels and rights), an ML engineer (training and eval), a platform engineer (serving and rollback), and a reviewer for samples in production. For one task these can be a few people part-time; for ten tasks they become a team and a platform.
+**People (Judgment).** Plan for a data owner (labels and rights), an ML engineer (training and eval), a platform engineer (serving and rollback), and a reviewer for samples in production. For one task these can be a few people part-time; for ten tasks they become a team and a platform.
 
 ## 4. Evaluation
 
 Evaluation is the hard part and the main source of false confidence.
 
-1. **Deterministic scoring.** Exact match per field, a confusion matrix, abstention rate, **wrong-but-confident rate**, and seconds per item. Do not let an LLM judge decide pass or fail: in our own pipeline a single judge sample scored the same sound artifact anywhere from 0 to 100.
+1. **Deterministic scoring.** Exact match per field, a confusion matrix, abstention rate, **wrong-but-confident rate**, and seconds per item. Do not let an LLM judge decide pass or fail: in our own pipeline (an internal observation, not a published result) a single judge sample scored the same sound artifact anywhere from 0 to 100.
 2. **Pre-register decisions.** Before each experiment, write the threshold for "improved", "kill" and "inconclusive", and the rule for choosing a checkpoint. Then run it once. This is what stopped us over-reading small differences (below).
 3. **Small eval sets are noisy.** With 28 real documents, a gain of two or three documents is inconclusive (we computed p about 0.125 for +3). Report counts, not just percentages, and say "inconclusive" when it is.
 4. **Evaluate on the artifact you serve**, through the production runtime, quantized, with the production prompt.
@@ -77,7 +77,7 @@ Evaluation is the hard part and the main source of false confidence.
 | Item | What to record or do | Basis |
 |---|---|---|
 | Model provenance | Publisher, repository, **commit hash**, licence file text at that revision, declared training data, tokenizer and chat template | Pin the revision; read the LICENSE file at that revision, not the model card |
-| Derivative licensing | Apache 2.0 base: no flow-down. Community licences (Llama-style): attribution and use restrictions travel with your tuned weights | Licence texts; see [01 §4](01-options-and-trade-offs.md#4-choosing-a-base-model) |
+| Derivative licensing | Apache 2.0 base: no flow-down. Community licences (Llama-style): attribution and use restrictions travel with your tuned weights | Licence texts; see [01 §6](01-options-and-trade-offs.md#6-choosing-a-base-model) |
 | Load-time code | Prefer safetensors (data-only). `trust_remote_code` can still execute code at load; a 2026 study ([arXiv 2601.14163](https://arxiv.org/abs/2601.14163)) calls it critical. Record every exception and review the code | Hugging Face security docs; the study |
 | Scanning | Scan downloaded model files and container images (for example JFrog and Hugging Face's cooperation on malicious-model scanning); run evaluation without production credentials | Verified existence; vendor-specific |
 | Training-data rights | Record consent, source and purpose for every real example | Internal policy |
