@@ -58,7 +58,7 @@ The throughput figure is an assumption and varies several-fold with sequence len
 
 **Serving, worked example.** **Assumption:** one L40S at $1.50 per hour (the price [Crusoe lists via OMR](https://omr.com/en/reviews/product/crusoe-cloud/pricing)), always on: 730 hours x $1.50 = about $1,100 per month; one H100 at Runpod's $2.89 PCIe price: 730 x $2.89 = about $2,110 per month. Against a hosted small model at an assumed $0.30 per million tokens (illustrative), the L40S pays back above $1,100 / $0.30 = about 3.7 billion tokens per month, an average of about 1,400 tokens per second around the clock. Below that volume the hosted option is cheaper on cost alone; you choose self-hosting for privacy, control or latency, not for savings, unless volume is high. Sharing one GPU across many adapters (multi-LoRA) improves the sums for many small tasks.
 
-**People (Judgment).** Plan for a data owner (labels and rights), an ML engineer (training and eval), a platform engineer (serving and rollback), and a reviewer for samples in production. For one task these can be a few people part-time; for ten tasks they become a team and a platform.
+**People (Judgment).** Plan for a data owner (labels and rights), an ML engineer (training and eval), a platform engineer (serving and rollback), and a reviewer for samples in production. For one task these can be a few people part-time; for ten tasks they become a team and a platform. Roles, team shapes, and how much agents can take on, with sources, are in [07 Team and agents](07-team-and-agents.md).
 
 ## 4. Evaluation
 
