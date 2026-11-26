@@ -13,9 +13,9 @@ Written 2026-11-26. Tool facts decay; the Ollama adapter advice was read in a pi
 
 ## Read this first
 
-**The idea in one sentence.** Store the frozen base model in 4-bit numbers to shrink it about four times, keep the small LoRA adapter in 16-bit, and train the adapter by computing through the compressed base, so memory is dominated by 0.5 bytes per base weight.
+**The idea in one sentence.** Store the frozen base model in 4-bit numbers to shrink it about four times, keep the small LoRA adapter in 16-bit, and train the adapter by computing through the compressed base, so memory is dominated by 0.5 bytes per base weight. The paper describes this as backpropagating gradients through a frozen, 4-bit quantized model into LoRA adapters ([abstract](https://arxiv.org/abs/2305.14314)); the Transformers documentation says 4-bit loading cuts memory use by 4x ([bitsandbytes page](https://huggingface.co/docs/transformers/main/en/quantization/bitsandbytes)); the 0.5 bytes is this guide's arithmetic (4 bits / 8).
 
-**Who this is for.** A team with one 16 to 48 GB GPU, or an Apple-silicon laptop, that wants to tune a 7B to 14B model, and anyone who must decide which quantization to train on and which to ship.
+**Who this is for.** **Judgment:** a team with one 16 to 48 GB GPU, or an Apple-silicon laptop, that wants to tune a 7B to 14B model, and anyone who must decide which quantization to train on and which to ship.
 
 **Afterwards you will be able to** work out the memory of a QLoRA run; explain NF4, double quantization and paged optimizers with numbers; write the real bitsandbytes and TRL configuration; and avoid shipping an adapter on a base it was not trained against.
 
@@ -30,13 +30,13 @@ Written 2026-11-26. Tool facts decay; the Ollama adapter advice was read in a pi
 **Part A - quantize four weights (constructed by this guide).** Take a block of four weights from a layer: [0.03, -0.31, 0.12, 0.50].
 
 1. **Scale by the block's largest absolute value.** That is 0.50, the quantization constant for this block. Divide each weight: [0.06, -0.62, 0.24, 1.00].
-2. **Snap each to the nearest of 16 allowed levels.** NF4 (4-bit NormalFloat) has 16 levels placed so that each covers the same share of a normal distribution. The levels used here are the NF4 codebook as this guide remembers it from bitsandbytes (-1, -0.6962, -0.5251, -0.3949, -0.2844, -0.1848, -0.0911, 0, 0.0796, 0.1609, 0.2461, 0.3379, 0.4407, 0.5626, 0.7230, 1); it was **not re-fetched, so the exact values are unverified**. Nearest levels: 0.06 becomes 0.0796; -0.62 becomes -0.6962; 0.24 becomes 0.2461; 1.00 stays 1.00.
+2. **Snap each to the nearest of 16 allowed levels.** NF4 (4-bit NormalFloat) has 16 levels placed so that each covers the same share of a normal distribution. The levels used here are the NF4 codebook as hard-coded in [bitsandbytes `functional.py`](https://github.com/bitsandbytes-foundation/bitsandbytes/blob/main/bitsandbytes/functional.py) and listed in [Appendix E of the paper](https://arxiv.org/html/2305.14314), rounded to four places by this guide (-1, -0.6962, -0.5251, -0.3949, -0.2844, -0.1848, -0.0911, 0, 0.0796, 0.1609, 0.2461, 0.3379, 0.4407, 0.5626, 0.7230, 1); both were fetched on 2026-11-26 and agree. Nearest levels: 0.06 becomes 0.0796; -0.62 becomes -0.6962; 0.24 becomes 0.2461; 1.00 stays 1.00.
 3. **Store 4-bit codes plus the constant.** Four codes (16 bits) and one 32-bit constant.
 4. **Dequantize when the layer runs.** Multiply by 0.50: [0.0398, -0.3481, 0.1231, 0.5000]. Errors against the originals: 0.0098, 0.0381, 0.0031, 0. The base now differs slightly from the 16-bit original; the adapter will be trained against this slightly different base.
 
 **Part B - what the constants cost.** Real blocks are 64 weights, not four. A 32-bit constant per 64 weights costs 32 / 64 = **0.5 bits per weight** ([Section 3 of the paper](https://arxiv.org/html/2305.14314), via extraction). Double quantization then stores the constants themselves as 8-bit floats in blocks of 256, with a 32-bit constant per block: 8/64 + 32/(64 x 256) = 0.125 + 0.00195 = **0.127 bits per weight**, a saving of **0.373 bits per weight**, which the paper puts at about 3 GB for a 65B model. Check: 65e9 x 0.373 / 8 = 3.03 GB.
 
-**Part C - memory for a 6.74-billion-weight model (Llama-2-7B shape, unverified; see [02](./02-lora.md)).** 4 bits plus 0.127 bits is 4.127 bits per weight, so 6.74e9 x 4.127 / 8 = **3.48 GB** for the base, against 13.5 GB in bf16. The rank-16 adapter of 39,976,960 numbers adds 0.64 GB for weights, gradients and Adam state in float32. Total about **4.1 GB before activations**.
+**Part C - memory for a 6.74-billion-weight model (Llama-2-7B shape, an **Assumption:** carried over from [02](./02-lora.md); all figures below are this guide's arithmetic).** 4 bits plus 0.127 bits is 4.127 bits per weight, so 6.74e9 x 4.127 / 8 = **3.48 GB** for the base, against 13.5 GB in bf16. The rank-16 adapter of 39,976,960 numbers adds 0.64 GB for weights, gradients and Adam state in float32. Total about **4.1 GB before activations**.
 
 ```mermaid
 flowchart LR
@@ -81,11 +81,11 @@ The second diagram is the deployment decision. Each arrow into a "serve" box is 
 
 ### What was broken before
 
-LoRA ([02](./02-lora.md)) shrank the part you train but not the part you hold. The frozen 7B base in bf16 is 13.5 GB, and a 65B base is about 130 GB, before you do anything. The QLoRA paper's introduction says full 16-bit fine-tuning of a 65B model needs more than 780 GB, and that its method brings this under 48 GB (Section 1, via extraction). Most teams do not own that hardware, and so could not tune the models they would like to.
+LoRA ([02](./02-lora.md)) shrank the part you train but not the part you hold. The frozen 7B base in bf16 is 13.5 GB, and a 65B base is about 130 GB, before you do anything (this guide's arithmetic: weights x 2 bytes). The QLoRA paper's introduction says regular 16-bit fine-tuning of a 65B model requires more than 780 GB of GPU memory, and that its method brings this under 48 GB ([Section 1](https://arxiv.org/html/2305.14314)). Most teams do not own that hardware, and so could not tune the models they would like to.
 
 ### The idea
 
-Compress the frozen base. The base is read-only during LoRA training, so rounding its numbers to 4 bits saves memory and only costs accuracy in what the adapter must then compensate for. Three engineering details keep the compression from hurting: a data type matched to how weights are distributed (NF4), compression of the compression's own bookkeeping (double quantization), and a safety valve for memory spikes (paged optimizers).
+Compress the frozen base. The base is read-only during LoRA training, so rounding its numbers to 4 bits saves memory and, **Judgment:** (this guide's inference) only costs accuracy in what the adapter must then compensate for. The paper names three engineering details that it says keep the compression from hurting ([Section 3](https://arxiv.org/html/2305.14314)): a data type matched to how weights are distributed (NF4), compression of the compression's own bookkeeping (double quantization), and a safety valve for memory spikes (paged optimizers).
 
 **Analogy.** A photocopied textbook: the original pages are scanned at low resolution to save shelf space, and your handwritten margin notes (the adapter) are written on the photocopy. NF4 is choosing the photocopier's grey levels to match the actual darkness of the page; double quantization is also compressing the table of settings; paged optimizers are a spare desk for when your workbench overflows.
 
@@ -93,11 +93,13 @@ Compress the frozen base. The base is read-only during LoRA training, so roundin
 
 ### How it works, step by step
 
+Steps follow the paper's description in [Section 3](https://arxiv.org/html/2305.14314) and the [Transformers bitsandbytes page](https://huggingface.co/docs/transformers/main/en/quantization/bitsandbytes); the paper says the all-linear-layer placement is needed to match full fine-tuning ([Section 4](https://arxiv.org/html/2305.14314)).
+
 1. **Load the base in 4-bit.** The loader quantizes each weight matrix block by block to NF4 and keeps 8-bit constants (double quantization).
 2. **Attach a bf16 LoRA adapter** to all linear layers ([02](./02-lora.md)).
-3. **Forward pass.** For each layer, the 4-bit weights are expanded to bf16, multiplied, and discarded.
-4. **Backward pass.** Gradients flow through the frozen layers to the adapter only.
-5. **Optimizer step.** AdamW on the adapter. If a spike (long sequence with gradient checkpointing) would overflow GPU memory, the paged optimizer moves its state to CPU and back automatically.
+3. **Forward pass.** For each layer, the 4-bit weights are expanded to bf16, multiplied, and discarded (the paper's Section 3 describes dequantizing to the computation data type).
+4. **Backward pass.** Gradients flow through the frozen layers to the adapter only (the Transformers page warns that 4-bit training is only supported for training extra parameters).
+5. **Optimizer step.** AdamW on the adapter. If a spike (long sequence with gradient checkpointing) would overflow GPU memory, the paged optimizer moves its state to CPU and back automatically (paper, Section 3: NVIDIA unified memory does automatic page transfers between CPU and GPU).
 6. **Save the adapter**, not the base.
 
 ### What the evidence says
@@ -108,10 +110,10 @@ Compress the frozen base. The base is read-only during LoRA training, so roundin
 
 ### What this does not show
 
-- The 99.3 percent figure is a GPT-4-judged score on one benchmark of 80 questions (the size is this guide's recollection, unverified); the paper itself says strong MMLU did not imply strong chatbot performance.
+- The 99.3 percent figure is a GPT-4-judged score on the Vicuna benchmark, a set of 80 prompts (paper, [Section 5 benchmark data and Table 7](https://arxiv.org/html/2305.14314)); the paper itself says benchmark results likely depend on how similar the fine-tuning data is to the benchmark (FLAN v2 resembles MMLU but not chatbot benchmarks), and that it did not establish that QLoRA matches full 16-bit fine-tuning at 33B and 65B scales ([Section 8](https://arxiv.org/html/2305.14314)).
 - The paper does not test serving the adapter on a different quantization of the base.
-- It does not claim the memory saving costs nothing in time; [Unsloth's documentation](https://unsloth.ai/docs/get-started/fine-tuning-llms-guide) says QLoRA training is slightly slower and marginally less accurate than 16-bit LoRA (vendor documentation).
-- It is about open LLaMA-family models in 2023, not current small models, and not private-document tasks.
+- It does not claim the memory saving costs nothing in time; [Unsloth's documentation](https://unsloth.ai/docs/get-started/fine-tuning-llms-guide/lora-hyperparameters-guide) says QLoRA training is slightly slower and marginally less accurate than 16-bit LoRA (vendor documentation).
+- It is about open LLaMA-family and T5 models in 2023 ([Section 4](https://arxiv.org/html/2305.14314)), not current small models, and not private-document tasks (this guide's reading: none of the paper's tasks are private-document tasks).
 
 ### Teach-back
 
@@ -143,15 +145,15 @@ It was optimised against the exact rounding errors of that base. A different qua
 
 ### The design in concrete terms
 
-**bitsandbytes.** `Linear4bit` takes `quant_type` (default `'fp4'`; use `'nf4'`), `compress_statistics` (default `True`, this is double quantization), `compute_dtype` and `quant_storage` (default `torch.uint8`) ([bitsandbytes documentation](https://huggingface.co/docs/bitsandbytes/main/en/reference/nn/linear4bit)). The documentation says `LinearNF4` builds levels "where each bin has equal area under a standard normal distribution N(0, 1) that is normalized into the range [-1, 1]". Through Hugging Face Transformers the same options appear as `BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4", bnb_4bit_use_double_quant=True, bnb_4bit_compute_dtype=torch.bfloat16)`; these names are from this guide's knowledge of the Transformers API and were not re-read here.
+**bitsandbytes.** `Linear4bit` takes `quant_type` (default `'fp4'`; use `'nf4'`), `compress_statistics` (default `True`, this is double quantization), `compute_dtype` and `quant_storage` (default `torch.uint8`) ([bitsandbytes documentation](https://huggingface.co/docs/bitsandbytes/main/en/reference/nn/linear4bit)). The documentation says `LinearNF4` builds levels "where each bin has equal area under a standard normal distribution N(0, 1) that is normalized into the range [-1, 1]". Through Hugging Face Transformers the same options appear as `BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4", bnb_4bit_use_double_quant=True, bnb_4bit_compute_dtype=torch.bfloat16)`; the [Transformers documentation](https://huggingface.co/docs/transformers/main/en/quantization/bitsandbytes) shows each of these arguments, says to use NF4 for training 4-bit base models, that the compute dtype defaults to float32 and bf16 speeds computation, and that nested quantization saves an additional 0.4 bits per parameter.
 
-**Paged optimizers.** The paper (Section 3) describes them as using NVIDIA unified memory to page optimizer state between CPU and GPU so gradient-checkpointing spikes on long sequences do not crash the run, and reports no slowdown at batch size 16 for 65B on 48 GB GPUs (Section 4, no direct measurement of paging). In practice you select one by name, for example `optim="paged_adamw_8bit"` in the training arguments (this guide's knowledge; not re-read). The separate bitsandbytes [8-bit optimizer page](https://huggingface.co/docs/bitsandbytes/main/en/optimizers) says 8-bit optimizers cut optimizer memory by about 75 percent.
+**Paged optimizers.** The paper (Section 3) describes them as using NVIDIA unified memory to page optimizer state between CPU and GPU so gradient-checkpointing spikes on long sequences do not crash the run, and reports no slowdown at batch size 16 for 65B on 48 GB GPUs (Section 4, no direct measurement of paging). In practice you select one by name, for example `optim="paged_adamw_8bit"` in the training arguments (unverified: the [Trainer documentation](https://huggingface.co/docs/transformers/main/en/main_classes/trainer) lists `adamw_8bit` among common options and defers the full list to `OptimizerNames`, which this guide did not read). The separate bitsandbytes [8-bit optimizer page](https://huggingface.co/docs/bitsandbytes/main/en/optimizers) says 8-bit optimizers cut GPU memory by 75 percent compared with 32-bit optimizers.
 
 **TRL.** [`SFTTrainer`](https://huggingface.co/docs/trl/sft_trainer) accepts `quantization_config` (a `BitsAndBytesConfig`) and `peft_config` and the documentation says to combine them for QLoRA; `quantization_config` is ignored if you pass an already-instantiated model.
 
-**Hyper-parameters.** Reuse the LoRA table in [02](./02-lora.md): all linear layers, rank 16 to 64, learning rate 1e-4 to 2e-4. QLoRA-specific facts from the paper (Appendix A.1, Section 5.1, via extraction): LoRA alpha was held fixed and the learning rate searched; dropout 0.05 helped 7B and 13B but not 33B and 65B; the learning rate was halved and batch size doubled for 33B and 65B; the T5 experiments used r = 16 or 64 with alpha = 64 (Appendix A.2). The chatbot recipe values (rank 64, alpha 16, learning rate about 2e-4, 1e-4 for the largest models) are this guide's recollection and **unverified** because that appendix was cut off in the fetched text. Unsloth's documentation gives `learning_rate = 2e-4`, 1 to 3 epochs, effective batch 16, and recommends training and serving in the same precision.
+**Hyper-parameters.** **Judgment:** reuse the LoRA table in [02](./02-lora.md): all linear layers, rank 16 to 64, learning rate 1e-4 to 2e-4. QLoRA-specific facts from the paper ([Appendix A.1](https://arxiv.org/html/2305.14314)): LoRA alpha was held fixed and the learning rate searched; LoRA dropout 0.05 was useful for 7B and 13B but not for 33B and 65B; rank was unrelated to final performance when LoRA is used on all layers; the T5 experiments used r = 16 for small to large models and r = 64 for xl and xxl, with alpha = 64 and no dropout (Appendix A.2). The chatbot recipe in Appendix B.2 and Table 9 uses NF4 with double quantization and bf16 compute, r = 64, alpha = 16, all linear layers, max grad norm 0.3, LoRA dropout 0.1 for models up to 13B and 0.05 for 33B and 65B, and learning rate 2e-4 for 7B and 13B and 1e-4 for 33B and 65B. (The paper's A.1 and B.2 statements about dropout read differently; this guide reports both rather than reconciling them.) Unsloth's documentation gives `learning_rate = 2e-4`, 1 to 3 epochs, effective batch 16, ([Unsloth LoRA hyper-parameters guide](https://unsloth.ai/docs/get-started/fine-tuning-llms-guide/lora-hyperparameters-guide), read 2026-11-26: "we recommend 2e-4 as a starting point", "1-3 epochs", effective batch 16). An earlier draft also said Unsloth recommends training and serving in the same precision; that was not found on the page and is removed (unverified).
 
-**Unsloth.** `load_in_4bit = True` gives QLoRA; with it off you train 16-bit LoRA; `load_in_8bit` and `load_in_16bit` also exist and only one may be set ([Unsloth documentation](https://unsloth.ai/docs/get-started/fine-tuning-llms-guide/lora-hyperparameters-guide)). Models whose names end in `unsloth-bnb-4bit` are Unsloth's "dynamic" 4-bit quants, which use slightly more memory than standard `bnb-4bit` for higher accuracy; the documentation says the QLoRA accuracy loss against LoRA is "now largely recovered" with them (vendor claim).
+**Unsloth.** `load_in_4bit = True` gives QLoRA; with it off you train 16-bit LoRA; `load_in_8bit` and `load_in_16bit` also exist and only one may be set (unverified: the [Unsloth hyper-parameters page](https://unsloth.ai/docs/get-started/fine-tuning-llms-guide/lora-hyperparameters-guide) as fetched on 2026-11-26 did not contain this statement). Models whose names end in `unsloth-bnb-4bit` are Unsloth's "dynamic" 4-bit quants, which use slightly more memory than standard `bnb-4bit` for higher accuracy; the [Unsloth fine-tuning guide](https://unsloth.ai/docs/get-started/fine-tuning-llms-guide) says the accuracy loss for QLoRA compared to LoRA is "now largely recovered" (vendor claim) and that these models consume slightly more VRAM than standard bitsandbytes 4-bit models.
 
 ### A minimal version
 
@@ -200,7 +202,7 @@ trainer.save_model("out-qlora/adapter")
 
 **Apple-silicon equivalent.**
 
-On a Mac, bitsandbytes does not apply. MLX-LM does the equivalent without a flag: the `LORA.md` page says "If `--model` points to a quantized model, then the training will use QLoRA, otherwise it will use regular LoRA." To get a quantized model, convert with the `-q` flag (the page names `convert.py` with `-q`; the current command spelling is `mlx_lm.convert`, to be checked with `--help`).
+On a Mac, bitsandbytes does not apply. MLX-LM does the equivalent without a flag: the `LORA.md` page says "If `--model` points to a quantized model, then the training will use QLoRA, otherwise it will use regular LoRA." To get a quantized model, convert with the `-q` flag (the page names `convert.py` with `-q`; the `mlx_lm.convert` spelling and the flags in the block below are unverified, check `--help`). The same page says the supported fine-tune types are `lora` (default), `dora` and `full`, and that `--mask-prompt` computes loss on the completion only, for chat and completion datasets ([LORA.md](https://github.com/ml-explore/mlx-lm/blob/main/mlx_lm/LORA.md)).
 
 ```bash
 # Unrun. pip install mlx-lm
@@ -210,7 +212,7 @@ mlx_lm.lora --model ./qwen3-8b-4bit --train --data ./data \
   --num-layers 16 --grad-checkpoint --adapter-path ./out-mlx
 ```
 
-Two differences from the CUDA recipe, one verified and one inferred. Verified: the MLX-LM page recommends `--grad-checkpoint`, a lower `--batch-size`, fewer `--num-layers` (default 16) and shorter sequences to save memory. Inferred (unverified here): MLX's 4-bit format is a grouped affine quantization, not NF4, so you cannot assume the NF4 results of the paper carry over; test quality on your own set. [The package mlx-lm-lora](https://github.com/Goekdeniz-Guelmez/mlx-lm-lora) lists quantized training at 4, 6 or 8 bits (its page, a community project).
+Two differences from the CUDA recipe, one verified and one inferred. Verified ([LORA.md](https://github.com/ml-explore/mlx-lm/blob/main/mlx_lm/LORA.md)): the MLX-LM page recommends `--grad-checkpoint`, a lower `--batch-size`, fewer `--num-layers` (default 16) and shorter sequences to save memory. Inferred (unverified here): MLX's 4-bit format is a grouped affine quantization, not NF4, so you cannot assume the NF4 results of the paper carry over; test quality on your own set. [The package mlx-lm-lora](https://github.com/Goekdeniz-Guelmez/mlx-lm-lora) lists quantized training at 4, 6 or 8 bits (its page, a community project).
 
 ### What it costs
 
@@ -222,7 +224,7 @@ Assumptions: the Part C model (6.74e9 weights); activations excluded; arithmetic
 | LoRA, bf16 base | 13.5 GB | 0.64 GB | about 14.1 GB |
 | QLoRA, NF4 plus double quantization | 3.48 GB | 0.64 GB | about 4.1 GB |
 
-Unsloth's published minimum-VRAM table (vendor documentation, quoted in [01 Options](../01-options-and-trade-offs.md#memory-as-a-first-estimate)) gives about 6 GB for an 8B model and 8.5 GB for 14B with 4-bit QLoRA, against about 33 GB for 14B at 16-bit LoRA. Those minimums sit above the bare weights because of activations, the CUDA context and buffers. In our own run one long sequence added about 10 GB of logits, so cap sequence length. Time: QLoRA steps are slower than 16-bit LoRA steps according to Unsloth (by how much was not stated); measure. At this scale the dollar cost of a run is small ([04 §3](../04-build-and-deploy-playbook.md#3-what-it-costs)).
+[Unsloth's requirements page](https://unsloth.ai/docs/get-started/fine-tuning-for-beginners/unsloth-requirements) (vendor documentation, read 2026-11-26; also quoted in [01 Options](../01-options-and-trade-offs.md#memory-as-a-first-estimate)) lists minimums of 6 GB for an 8B model and 8.5 GB for 14B with 4-bit QLoRA, against 22 GB and 33 GB at 16-bit LoRA, and says some models need more. **Judgment:** those minimums sit above the bare weights because of activations, the CUDA context and buffers (this guide's inference). In our own run one long sequence added about 10 GB of logits, so cap sequence length ([04 §7](../04-build-and-deploy-playbook.md#7-a-measured-case-from-our-own-experiments)). Time: QLoRA steps are slightly slower than 16-bit LoRA steps according to [Unsloth](https://unsloth.ai/docs/get-started/fine-tuning-llms-guide/lora-hyperparameters-guide) (by how much was not stated); measure. **Judgment:** at this scale the dollar cost of a run is small ([04 §3](../04-build-and-deploy-playbook.md#3-what-it-costs)).
 
 **The adapter-transfer caveat.**
 
@@ -239,6 +241,8 @@ Unsloth's published minimum-VRAM table (vendor documentation, quoted in [01 Opti
 
 ### How it fails
 
+**Judgment:** the causes and mitigations in this table are this guide's inferences, except where a row cites the documentation or the paper (the Ollama and MLX-LM rows, and the paper's all-linear-layers finding).
+
 | Symptom | Likely cause | Mitigation |
 |---|---|---|
 | Out-of-memory early | Sequence too long; batch too big; logits dominate | Lower `max_length`; batch 1 with accumulation; gradient checkpointing; paged optimizer |
@@ -252,6 +256,8 @@ Unsloth's published minimum-VRAM table (vendor documentation, quoted in [01 Opti
 
 ### Evaluating your version
 
+**Judgment:** the four recommendations below (test set, baseline, serving check, stop rule) are this guide's, not a source's; the 5-point noise margin at 200 items is an **Assumption:** to be replaced by your own measured run-to-run spread.
+
 **Metric and test set.** As in [02](./02-lora.md): the task metric on at least 200 held-out items split by what is new in production, plus a general regression set.
 
 **Baseline.** Three arms: the best prompt on the base model; LoRA in bf16 (if it fits, or on a small subset); and QLoRA. The gap between the last two is the cost of 4-bit on your task.
@@ -262,13 +268,13 @@ Unsloth's published minimum-VRAM table (vendor documentation, quoted in [01 Opti
 
 ### Adopt, adapt or skip
 
-**Adopt for training on constrained hardware,** which is most small teams: a 24 GB GPU or a 32 GB-plus Mac tunes a 7B to 8B model comfortably. **Adapt** the deployment: decide the serving format first, then choose the training format so that adapter and base match, and always evaluate the shipped artifact. **Skip** QLoRA when a 16-bit LoRA fits in your hardware with room to spare and you will serve in 16-bit: it is slightly faster and marginally more accurate, per Unsloth, and removes the mismatch risk entirely. Never let "it trained in 6 GB" stand in for "it will serve correctly".
+**Judgment:** **Adopt for training on constrained hardware,** which is most small teams: a 24 GB GPU or a 32 GB-plus Mac tunes a 7B to 8B model comfortably (Unsloth's table lists 6 GB minimum for 8B QLoRA; the Mac figure is unverified). **Adapt** the deployment: decide the serving format first, then choose the training format so that adapter and base match, and always evaluate the shipped artifact. **Skip** QLoRA when a 16-bit LoRA fits in your hardware with room to spare and you will serve in 16-bit: it is slightly faster and marginally more accurate, per [Unsloth](https://unsloth.ai/docs/get-started/fine-tuning-llms-guide/lora-hyperparameters-guide), and removes the mismatch risk entirely. Never let "it trained in 6 GB" stand in for "it will serve correctly".
 
 ## Tutorial 3 - Researcher understanding
 
 ### Formal setup
 
-**Notation.** A weight block w of 64 values has absolute maximum c = max |w_i|. Normalised values u_i = w_i / c lie in [-1, 1]. Let the NF4 codebook be Q = {q_0..q_15} in [-1, 1], quantiles of N(0, 1) rescaled so that 0 is a level and both -1 and 1 are levels. The stored code is j_i = argmin_k |u_i - q_k|, and the dequantized value is w_hat_i = c q_{j_i}. The adapted forward pass is h = (alpha / r) B A x + w_hat x with w_hat treated as constant. Gradients are taken only with respect to A and B.
+**Notation (this guide's formalisation of [Section 3](https://arxiv.org/html/2305.14314)).** A weight block w of 64 values has absolute maximum c = max |w_i|. Normalised values u_i = w_i / c lie in [-1, 1]. Let the NF4 codebook be Q = {q_0..q_15} in [-1, 1], quantiles of N(0, 1) rescaled so that 0 is a level and both -1 and 1 are levels. The stored code is j_i = argmin_k |u_i - q_k|, and the dequantized value is w_hat_i = c q_{j_i}. The adapted forward pass is h = (alpha / r) B A x + w_hat x with w_hat treated as constant. Gradients are taken only with respect to A and B.
 
 **Numeric toy instance.** Part A: c = 0.50; u = [0.06, -0.62, 0.24, 1.00]; codes pick q = [0.0796, -0.6962, 0.2461, 1.0]; w_hat = [0.0398, -0.3481, 0.1231, 0.5000]. The squared error sum is 0.0098^2 + 0.0381^2 + 0.0031^2 = 0.000096 + 0.001452 + 0.0000093 = 0.00156 (this guide's arithmetic). The adapter objective is min over A, B of L(w_hat + (alpha/r)BA), so it is trained to correct w_hat, not w.
 
@@ -276,13 +282,15 @@ Unsloth's published minimum-VRAM table (vendor documentation, quoted in [01 Opti
 
 ### The claims, stated precisely
 
+Each claim is stated as the [paper](https://arxiv.org/html/2305.14314) makes it.
+
 1. **Memory.** A 65B model fine-tuned on one 48 GB GPU, from more than 780 GB for 16-bit full fine-tuning (Section 1).
-2. **Quality.** QLoRA with NF4 and double quantization matches 16-bit full and LoRA fine-tuning on the tested tasks (Section 4, Tables 3 and 4).
+2. **Quality.** QLoRA with NF4 and double quantization matches 16-bit full and LoRA fine-tuning on the tested tasks (Section 4, Tables 3 and 4); Section 8 says the paper did not establish this at 33B and 65B.
 3. **Data type.** NF4 beats Int4 and FP4 on perplexity (Table 2) and on average 5-shot MMLU (Table 4); on T5-3B Super-NaturalInstructions FP4 and NF4 are close (Table 3: 55.6 against 55.3, with BF16 at 54.3).
 4. **Layers.** Adapting all linear layers is required to match full fine-tuning; rank is then unrelated to final performance (Appendix A.1).
 5. **Data.** Quality and suitability matter more than size for chatbot tuning (Section 1, Appendix B.1).
 
-Not claimed: any transfer of adapters across quantizations; any statement about current model families; the Guanaco score as a general measure of quality.
+Not claimed (this guide's reading of the paper): any transfer of adapters across quantizations; any statement about current model families; the Guanaco score as a general measure of quality.
 
 ### Evidence, table by table
 
@@ -294,7 +302,7 @@ Not claimed: any transfer of adapters across quantizations; any statement about 
 
 **Table 6 (Vicuna benchmark, GPT-4 judged, % of ChatGPT).** Guanaco 65B 99.3 percent (41 GB); Guanaco 33B 97.8 percent (21 GB). Associates the pipeline with a chatbot score; the judge and prompts are the authors'.
 
-**Figure 2 / Appendix A.1 (LoRA placement).** Associates "all linear layers" with matching full fine-tuning; q and v only did not match at large scale.
+**Figure 2 / Appendix A.1 (LoRA placement).** Associates "all linear layers" with matching full fine-tuning ([Section 4](https://arxiv.org/html/2305.14314): LoRA on all linear transformer block layers is required to match full fine-tuning for LLaMA 7B on Alpaca). The "q and v only did not match at large scale" wording was this guide's recollection and is unverified; the paper's evidence is the 7B Figure 2.
 
 ### Ablations and what they isolate
 
@@ -306,10 +314,10 @@ Not claimed: any transfer of adapters across quantizations; any statement about 
 
 ### Threats to validity
 
-- **Judge dependence.** GPT-4 as judge and the Vicuna benchmark's small question set carry position and verbosity biases; the paper discusses some of them (not re-read here).
+- **Judge dependence.** GPT-4 as judge and the Vicuna benchmark's 80 prompts: the paper reports only moderate agreement among human annotators (Fleiss kappa 0.42) and says this points to limitations in current chatbot benchmarks and evaluation protocols ([Section 6.2](https://arxiv.org/html/2305.14314)). **Judgment:** position and verbosity bias are known LLM-judge risks (this guide's inference, not sourced here).
 - **Model families and date.** LLaMA, T5 and 2023-era models.
 - **No transfer test.** Nothing about serving formats other than the training format.
-- **Self-reported.** Authors' own comparisons; the preprint's headline numbers have been widely reused, but this guide did not locate an independent replication (unverified).
+- **Self-reported.** Authors' own comparisons; this guide did not locate an independent replication (unverified).
 - **Confounded NF4 and DQ rows.** Two interventions appear together in the headline rows.
 
 ### Open problems and follow-ups
@@ -317,9 +325,11 @@ Not claimed: any transfer of adapters across quantizations; any statement about 
 - Quantization-aware adapter methods that train for the serving format (follow-up literature not read here).
 - How much 2-, 3- and 6-bit bases cost; mlx-lm-lora lists 4, 6 and 8-bit training modes.
 - Whether dynamic mixed-precision bases (Unsloth's dynamic 4-bit) close the quality gap; the evidence is vendor documentation.
-- Companion explainers: [02 LoRA](./02-lora.md), [04 DoRA](./04-dora.md) (a variant that also works on quantized bases through the community QDoRA).
+- Companion explainers: [02 LoRA](./02-lora.md), [04 DoRA](./04-dora.md) (a variant that also works on quantized bases through the community QDoRA; see that explainer for its sources).
 
 ### What would change my mind
+
+**Judgment:** each item below is a threshold this guide chose, not a source's.
 
 - A measurement showing adapters trained on NF4 lose under 1 point when served on Q4_K_M and on bf16 across several tasks would relax the matching rule.
 - A study showing 16-bit LoRA beats QLoRA by more than 5 points on structured-output tasks for current 4B to 8B models would shift the default to 16-bit when memory allows.
@@ -342,15 +352,15 @@ Not claimed: any transfer of adapters across quantizations; any statement about 
 
 ## Questions readers get stuck on
 
-**What does the "Q" buy me in one number?** About a fourfold smaller base. For a 6.74-billion-weight model, 13.5 GB becomes 3.48 GB in the worked example. Total training memory moves from about 14.1 GB to about 4.1 GB before activations.
+**What does the "Q" buy me in one number?** About a fourfold smaller base ([Transformers documentation](https://huggingface.co/docs/transformers/main/en/quantization/bitsandbytes)). For a 6.74-billion-weight model, 13.5 GB becomes 3.48 GB in the worked example. Total training memory moves from about 14.1 GB to about 4.1 GB before activations (this guide's arithmetic; **Assumption:** the Part C model).
 
-**Is the training arithmetic done in 4-bit?** No. Weights are stored in 4-bit and expanded to bf16 for each layer's matrix multiplication. The speed cost of that expansion is why QLoRA is slightly slower per step than 16-bit LoRA.
+**Is the training arithmetic done in 4-bit?** No. Weights are stored in 4-bit and expanded to bf16 for each layer's matrix multiplication. QLoRA is slightly slower per step than 16-bit LoRA ([Unsloth](https://unsloth.ai/docs/get-started/fine-tuning-llms-guide/lora-hyperparameters-guide)); **Judgment:** the expansion work is the likely reason (this guide's inference, not stated by the source).
 
-**What is NF4 and why not just 4-bit integers?** NF4 places its 16 levels at equal-probability points of a normal distribution, so each code is used about equally often when weights are roughly normal. Table 2 shows perplexity 27.41 for NF4 with double quantization against 34.34 for Int4. In plain terms, the integer version was clearly worse at reproducing the model.
+**What is NF4 and why not just 4-bit integers?** NF4 places its 16 levels at equal-probability points of a normal distribution ([bitsandbytes documentation](https://huggingface.co/docs/bitsandbytes/main/en/reference/nn/linear4bit)), so, this guide infers, each code is used about equally often when weights are roughly normal. [Table 2](https://arxiv.org/html/2305.14314) shows perplexity 27.41 for NF4 with double quantization against 34.34 for Int4. In plain terms, the integer version was clearly worse at reproducing the model.
 
 **What does double quantization actually save?** The per-block scales cost 0.5 bits per weight at one 32-bit scale per 64 weights; quantizing them to 8 bits in blocks of 256 cuts that to about 0.127, saving 0.373 bits per weight, about 3 GB on a 65B model. For 7B it is about 0.31 GB (6.74e9 x 0.373 / 8), a modest gain.
 
-**Do paged optimizers make training slower?** The paper says no measurable slowdown at batch size 16 for 65B on 48 GB cards, but gives no direct paging measurement. Paging only activates when memory runs out, so it behaves as a safety valve.
+**Do paged optimizers make training slower?** The paper says no measurable slowdown at batch size 16 for 65B on 48 GB cards, but gives no direct paging measurement. The paper describes paging as automatic transfers for when the GPU occasionally runs out of memory ([Section 3](https://arxiv.org/html/2305.14314)), so it behaves as a safety valve.
 
 **Can I train QLoRA and serve the adapter with Ollama?** It can work, but the documentation advice in its older pinned copy is to prefer non-QLoRA adapters because frameworks quantize differently. Safer: merge into a bf16 base, convert to GGUF, quantize, and evaluate the final file. Test whichever path you choose.
 
@@ -358,7 +368,7 @@ Not claimed: any transfer of adapters across quantizations; any statement about 
 
 **Is QLoRA worse than LoRA?** Slightly, by Unsloth's documentation (slower and marginally less accurate), and its dynamic 4-bit bases are said to recover most of it. In the paper's tables it matches 16-bit within noise. Measure on your task with a small 16-bit comparison run.
 
-**Why did the paper's small, 9,209-example dataset beat a 450,000-example one?** The paper says data quality and suitability for the target matter more than size for chatbots. It is one comparison on one family of benchmarks; it argues for curating, not for small data in general.
+**Why did the paper's small, 9,209-example dataset beat a 450,000-example one?** The paper says data quality and suitability for the target matter more than size for chatbots ([Section 1](https://arxiv.org/html/2305.14314); the 9,209 examples are the top-reply subset of OASST1, Appendix B.1). It is one comparison on one family of benchmarks; it argues for curating, not for small data in general.
 
 **Why not just quantize the model after LoRA training?** You can; that is the "train in bf16, merge, then quantize" path, and Ollama's advice favours it. QLoRA exists for when the 16-bit base does not fit on your hardware during training.
 
@@ -368,7 +378,7 @@ Not claimed: any transfer of adapters across quantizations; any statement about 
 
 **Plain explanation.** A 4-bit number takes half a byte; a 16-bit number two bytes.
 
-**Tiny example.** One billion weights: 2 GB at 16-bit, 0.5 GB at 4-bit, about 0.516 GB with double-quantized constants (4.127 bits).
+**Tiny example (this guide's arithmetic).** One billion weights: 2 GB at 16-bit, 0.5 GB at 4-bit, about 0.516 GB with double-quantized constants (4.127 bits).
 
 **Where used.** Part C and the cost table.
 
@@ -378,7 +388,7 @@ Not claimed: any transfer of adapters across quantizations; any statement about 
 
 **Plain explanation.** Many weight values cluster near zero in a bell shape. A quantile cut splits the bell into equal-probability slices; NF4 puts one level in each slice.
 
-**Tiny example.** Split a standard normal into four equal-probability slices: the cut points are about -0.67, 0, 0.67. More values land near zero, so levels are denser there; NF4's levels near zero in the toy are 0, 0.0796 and -0.0911.
+**Tiny example (standard normal quartiles, a textbook fact the guide did not source; NF4 levels from the [bitsandbytes source](https://github.com/bitsandbytes-foundation/bitsandbytes/blob/main/bitsandbytes/functional.py)).** Split a standard normal into four equal-probability slices: the cut points are about -0.67, 0, 0.67. More values land near zero, so levels are denser there; NF4's levels nearest zero are 0, 0.0796 and -0.0911.
 
 **Where used.** Why NF4 beats evenly spaced levels.
 
@@ -388,7 +398,7 @@ Not claimed: any transfer of adapters across quantizations; any statement about 
 
 **Plain explanation.** LoRA trains small matrices on top of a frozen base ([02](./02-lora.md)); the base still must be held in memory.
 
-**Tiny example.** At rank 16 the adapter in the worked shape is 39,976,960 numbers, 0.64 GB with optimizer state; the base is 13.5 GB in bf16.
+**Tiny example (this guide's arithmetic, carried from [02](./02-lora.md)).** At rank 16 the adapter in the worked shape is 39,976,960 numbers, 0.64 GB with optimizer state; the base is 13.5 GB in bf16.
 
 **Where used.** The cost table.
 
@@ -398,7 +408,7 @@ Not claimed: any transfer of adapters across quantizations; any statement about 
 
 **Plain explanation.** A trained adapter is only useful through a runtime that can load it with the right base. Runtimes and file formats (Safetensors, GGUF, MLX) each apply their own quantization.
 
-**Tiny example.** One base can exist as bf16 Safetensors (13.5 GB), as an NF4 bitsandbytes load (3.5 GB), as a Q4_K_M GGUF, and as an MLX 4-bit folder; each rounds differently.
+**Tiny example (sizes are this guide's arithmetic from Part C).** One base can exist as bf16 Safetensors (13.5 GB), as an NF4 bitsandbytes load (3.5 GB), as a Q4_K_M GGUF, and as an MLX 4-bit folder; **Judgment:** each rounds differently (this guide's inference; the GGUF and MLX schemes were not read).
 
 **Where used.** The adapter-transfer caveat.
 
@@ -410,7 +420,7 @@ Not claimed: any transfer of adapters across quantizations; any statement about 
 
 **After:** [04 DoRA](./04-dora.md) (adds a magnitude vector; QDoRA applies it to a 4-bit base). For serving, [03 Vehicles](../03-vehicles.md); for process, [04 Build and deploy playbook](../04-build-and-deploy-playbook.md).
 
-**Nearest techniques.** *LoRA* keeps the base in 16-bit: faster and slightly more accurate, bigger memory floor. *Post-training quantization* compresses a finished model for serving and trains nothing; QLoRA compresses only to make training fit.
+**Nearest techniques.** *LoRA* keeps the base in 16-bit: faster and slightly more accurate ([Unsloth](https://unsloth.ai/docs/get-started/fine-tuning-llms-guide/lora-hyperparameters-guide)), bigger memory floor. *Post-training quantization* compresses a finished model for serving and trains nothing; **Judgment:** QLoRA compresses only to make training fit.
 
 **Read next:** [04 DoRA](./04-dora.md).
 
@@ -419,13 +429,13 @@ Not claimed: any transfer of adapters across quantizations; any statement about 
 <details>
 <summary>1. (Compute) Quantize the block [0.10, -0.20, 0.40, 0.05] with absmax scaling: what are the normalised values?</summary>
 
-The largest absolute value is 0.40. Divide: [0.25, -0.50, 1.00, 0.125]. Each would then snap to the nearest NF4 level and be rescaled by 0.40 on dequantization.
+The largest absolute value is 0.40. Divide (this guide's arithmetic): [0.25, -0.50, 1.00, 0.125]. Each would then snap to the nearest NF4 level and be rescaled by 0.40 on dequantization.
 </details>
 
 <details>
 <summary>2. (Compute) Memory for the base of a 14-billion-weight model in NF4 with double quantization?</summary>
 
-14e9 x 4.127 / 8 = 7.22 GB for the base (this guide's arithmetic); Unsloth's table quotes about 8.5 GB total for a 14B QLoRA, which includes more than the weights.
+14e9 x 4.127 / 8 = 7.22 GB for the base (this guide's arithmetic); [Unsloth's table](https://unsloth.ai/docs/get-started/fine-tuning-for-beginners/unsloth-requirements) quotes 8.5 GB as the minimum for a 14B QLoRA, which includes more than the weights.
 </details>
 
 <details>

@@ -25,7 +25,7 @@ Written 2026-11-26. Tool status and licences move; each fact says where it came 
 
 ## The technique in one worked example
 
-Constructed by this guide with four numbers instead of billions; the arithmetic was run in numpy.
+Constructed by this guide with four numbers instead of billions (this guide's arithmetic, run in numpy).
 
 **Setup.** A base model has four weights `[1.0, 2.0, 3.0, 4.0]`. Fine-tune A (say, for a format) gives `[1.4, 2.0, 2.6, 4.1]`; fine-tune B (a domain) gives `[1.2, 2.5, 3.3, 3.6]`. A **task vector** is fine-tuned minus base ([task arithmetic](https://arxiv.org/abs/2212.04089)): tA = `[0.4, 0.0, -0.4, 0.1]` and tB = `[0.2, 0.5, 0.3, -0.4]`.
 
@@ -86,7 +86,7 @@ The loop on the right is the real workflow: merging is cheap, so you try several
 
 ### What was broken before
 
-A team trains one model per task: one for output format, one for a domain, one for tone. Serving five models costs five times the memory, and training one model on all tasks together needs all the data in one place and a full retraining each time a task changes. Fine-tuning for a narrow task can also make a model worse at things it used to do ("forgetting").
+A team trains one model per task: one for output format, one for a domain, one for tone. **Assumption:** serving five full models costs about five times the memory of one (this guide's arithmetic), and training one model on all tasks together needs all the data in one place and a full retraining each time a task changes. **Judgment:** fine-tuning for a narrow task can also make a model worse at things it used to do ("forgetting"); the sibling guide on [continued pretraining](./13-continued-pretraining.md) cites measured forgetting for the pretraining case.
 
 ### The idea
 
@@ -108,7 +108,7 @@ A team trains one model per task: one for output format, one for a domain, one f
 - **Model soups** ([paper](https://arxiv.org/html/2203.05482)): averaging fine-tuned ViT-G/14 models gave 90.94 percent top-1 on ImageNet (a greedy soup that kept 14 of 58 models), against 90.72 for the best model chosen on held-out data and 90.78 for the best chosen on the test set; meaning that out of every 1,000 images the soup labelled about two more correctly than the best single model (Tables 1 and 4). Uniform averaging can fail: in the CLIP ablation it scored 79.97 against 80.38 for the best single model (Table 3).
 - **Task arithmetic** ([paper](https://arxiv.org/html/2212.04089)): adding task vectors from pairs of eight image tasks reached 98.9 percent normalised accuracy on average, and all eight gave 91.2 percent average (Section 4.1). Subtracting a toxicity vector cut toxic GPT-2 generations from 4.8 to 0.8 percent while WikiText-103 perplexity moved from 16.4 to 16.9 (Table 2).
 - **TIES** ([paper](https://arxiv.org/html/2306.01708), Table 1): average accuracy 73.9 for T5-Base and 76.9 for T5-Large over seven tasks, against 73.2 and 73.3 for task arithmetic, using a validation set; ViT-L/14 86.0 versus 84.5.
-- **DARE** ([paper](https://arxiv.org/html/2311.03099)): up to 90 or 99 percent of fine-tuning deltas can be dropped with little loss when deltas are small (within about 0.002); merging WizardLM-13B with WizardMath-13B kept GSM8K at 66.3 against 64.2 for the math model alone (Table 1).
+- **DARE** ([paper](https://arxiv.org/html/2311.03099)): up to 90 or 99 percent of fine-tuning deltas can be dropped with little loss when deltas are small (within about 0.002, Section 4.6); the 99 percent result held for WizardMath-70B but not for the 7B and 13B versions (Section 4.2); merging WizardLM-13B with WizardMath-13B kept GSM8K at 66.3 against 64.2 for the math model alone (Table 1).
 
 ### What this does not show
 
@@ -122,7 +122,7 @@ A team trains one model per task: one for output format, one for a domain, one f
 <details>
 <summary>1. What is a task vector, and why does merging need a shared base?</summary>
 
-It is fine-tuned weights minus base weights. Its meaning is "how this task moved the model from that start", so vectors from different starts cannot be added meaningfully. Task arithmetic's own limitation is that it was tested only on models from the same initialization.
+It is fine-tuned weights minus base weights. Its meaning is "how this task moved the model from that start", so vectors from different starts cannot be added meaningfully. Task arithmetic's own limitation is that it was tested only on models from the same initialization ([Section 6](https://arxiv.org/abs/2212.04089)).
 </details>
 
 <details>
@@ -134,26 +134,26 @@ Many entries barely change in fine-tuning and add noise when merged, and differe
 <details>
 <summary>3. In the example, why do averaging and TIES give different weights at position 3?</summary>
 
-A moves it -0.4 and B +0.3. Averaging gives -0.05 of change; adding gives -0.1; TIES elects negative and keeps only A's -0.4.
+A moves it -0.4 and B +0.3. Averaging gives -0.05 of change; adding gives -0.1 (this guide's arithmetic); TIES elects negative and keeps only A's -0.4.
 </details>
 
 <details>
 <summary>4. Name two reasons a merged model could be worse than either parent on a task.</summary>
 
-Interference between conflicting updates, and a scale or density that is wrong for that task. Large deltas (for example after continued pretraining) also break DARE, per its authors.
+Interference between conflicting updates, and a scale or density that is wrong for that task. Large deltas (for example after continued pretraining) also break DARE, per [its authors](https://arxiv.org/abs/2311.03099).
 </details>
 
 ## Tutorial 2 - Practitioner understanding
 
 ### The design in concrete terms
 
-**Which method.** Use linear (average) when you hold several fine-tunes of the same base trained with similar data and settings (the soup case). Use task arithmetic when you want to add tasks with scales or subtract a behaviour. Use TIES or DARE-TIES when two or more task vectors collide. Start with scale 1 for each vector and tune.
+**Which method (Judgment, this guide's recommendation).** Use linear (average) when you hold several fine-tunes of the same base trained with similar data and settings (the soup case). Use task arithmetic when you want to add tasks with scales or subtract a behaviour. Use TIES or DARE-TIES when two or more task vectors collide. Start with scale 1 for each vector and tune.
 
-**mergekit.** [mergekit](https://github.com/arcee-ai/mergekit) is licensed LGPL-3.0, is not archived, and had its last push on 2026-10-31 with about 7,500 stars (GitHub API, read 2026-11-26). Its README lists merge methods `linear`, `slerp`, `task_arithmetic`, `ties`, `dare_linear`, `dare_ties`, `della`, `breadcrumbs`, `sce`, `model_stock`, `passthrough` and others; all except `linear`, `karcher` and `passthrough` need a `base_model`. Its YAML keys are `merge_method`, `models`, `base_model`, `parameters` (weights and densities), `dtype`, `tokenizer` (or older `tokenizer_source`) and `chat_template`. CLI: `mergekit-yaml config.yml ./out [--cuda] [--lazy-unpickle]`. It also offers `mergekit-extract-lora` (turn a fine-tune into a LoRA by low-rank approximation of its delta) and `mergekit-moe` (merge dense models into an MoE; see [10](./10-mixture-of-experts.md)). Tokenizer handling: `union` combines vocabularies, `base` uses the base's; the `--unsafe-truncate-embeddings` option is off by default.
+**mergekit.** [mergekit](https://github.com/arcee-ai/mergekit) is licensed LGPL-3.0, is not archived, and had its last push on 2026-10-31 with 7,494 stars ([GitHub API](https://api.github.com/repos/arcee-ai/mergekit), read 2026-11-26). Its [README](https://github.com/arcee-ai/mergekit) lists merge methods `linear`, `slerp`, `task_arithmetic`, `ties`, `dare_linear`, `dare_ties`, `della`, `breadcrumbs`, `sce`, `model_stock`, `passthrough` and others; all except `linear`, `karcher` and `passthrough` need a `base_model`. Its YAML keys are `merge_method`, `models`, `base_model`, `parameters` (weights and densities), `dtype`, `tokenizer` (or older `tokenizer_source`) and `chat_template`. CLI: `mergekit-yaml config.yml ./out [--cuda] [--lazy-unpickle]`. It also offers `mergekit-extract-lora` (turn a fine-tune into a LoRA by low-rank approximation of its delta) and `mergekit-moe` (merge dense models into an MoE; see [10](./10-mixture-of-experts.md)). Tokenizer handling: `union` combines vocabularies, `base` uses the base's; the `--unsafe-truncate-embeddings` option is off by default.
 
 **PEFT adapter merging.** The [PEFT guide](https://huggingface.co/docs/peft/main/en/developer_guides/model_merging) merges LoRA adapters through `add_weighted_adapter(adapters, weights, adapter_name, combination_type, density)` with `ties` and `dare_ties` options. It says weights above 1.0 typically preserve scale, suggests 1.0 as a default start, uses density 0.2 in its examples, and warns that full-model merges must watch special tokens added at the same embedding index (not an issue for adapters from one base).
 
-**Licences.** The merged model is a derivative of every parent. Each parent's licence terms (attribution, naming, use restrictions, acceptable-use policies) carry into it; a model under a custom licence cannot be relicensed by merging it with an Apache 2.0 one ([01 section 4](../01-options-and-trade-offs.md#4-choosing-a-base-model) covers custom licences). mergekit's LGPL-3.0 applies to the tool; this guide's reading, a judgment and not legal advice, is that it does not by itself license the weights you produce. Record every parent repository and revision in the model card.
+**Licences.** **Judgment (not legal advice):** the merged model is a derivative of every parent. Each parent's licence terms (attribution, naming, use restrictions, acceptable-use policies) carry into it; **Judgment:** a model under a custom licence cannot be relicensed by merging it with an Apache 2.0 one ([01 section 4](../01-options-and-trade-offs.md#4-choosing-a-base-model) covers custom licences). mergekit's LGPL-3.0 applies to the tool; this guide's reading, a judgment and not legal advice, is that it does not by itself license the weights you produce. Record every parent repository and revision in the model card.
 
 ### A minimal version
 
@@ -194,7 +194,7 @@ Run `mergekit-yaml config.yml ./merged-16bit`. Check the README for the exact `t
 
 ### What it costs
 
-Merging is arithmetic on weights: one pass over each parent's files. Assumptions: a 4B model in bf16 is 8.0 GB per parent (4.0e9 x 16 / 8); three parents need about 24 GB of disk and, with mergekit's lazy loading, far less RAM than the sum, since it works tensor by tensor (the README documents `--lazy-unpickle`; the memory saving is this guide's inference). Wall-clock time is minutes on a CPU for 4B models, versus a fine-tuning run for retraining. Evaluation dominates the cost: each trial needs your full test set, say 400 items per skill, run against each candidate (a grid of 3 scales x 3 densities is 9 candidates, so 3,600 item evaluations per skill). Serving cost falls: one merged file replaces N models, though N LoRA adapters on one base already cost megabytes each ([03](../03-vehicles.md)), so merging adapters mainly saves complexity and per-request adapter switching, not memory.
+Merging is arithmetic on weights: one pass over each parent's files. Assumptions: a 4B model in bf16 is 8.0 GB per parent (4.0e9 x 16 / 8); three parents need about 24 GB of disk and, with mergekit's lazy loading, far less RAM than the sum, since it works tensor by tensor (the README documents `--lazy-unpickle`; the memory saving is this guide's inference). **Assumption:** wall-clock time is minutes on a CPU for 4B models (this guide's expectation, not measured), versus a fine-tuning run for retraining. Evaluation dominates the cost: each trial needs your full test set, say 400 items per skill, run against each candidate (a grid of 3 scales x 3 densities is 9 candidates, so 3,600 item evaluations per skill). Serving cost falls: one merged file replaces N models, though N LoRA adapters on one base already cost megabytes each ([03](../03-vehicles.md)), so merging adapters mainly saves complexity and per-request adapter switching, not memory.
 
 ### How it fails
 
@@ -202,23 +202,23 @@ Merging is arithmetic on weights: one pass over each parent's files. Assumptions
 |---|---|---|
 | One skill collapses, the other fine | Conflicting deltas; scale too high or too low | TIES or DARE-TIES; tune per-model weights; lower density |
 | Gibberish or near-zero accuracy | Parents not from the same base, or different tokenizer or vocabulary | Check base hash and tokenizer; use `tokenizer` settings; never merge across bases |
-| DARE destroys a model | Deltas too large (continued pretraining; for example WizardCoder-Python-13B built on Llama-2 fell from 63.41 HumanEval to 0.0 after dropping 10 percent, per the paper) | Check delta magnitude; use a lower drop rate or a non-DARE method |
+| DARE destroys a model | Deltas too large (continued pretraining; for example WizardCoder-Python-13B fell from 63.41 HumanEval to 0.0 after dropping 10 percent, per [DARE Section 4.6](https://arxiv.org/html/2311.03099), where the authors used a Llama-2-13b backbone that gave larger deltas than usual) | Check delta magnitude; use a lower drop rate or a non-DARE method |
 | Special tokens or chat template break | Two parents added tokens at the same embedding index | Resize embeddings; merge adapters not full weights; verify template |
 | Safety or refusal behaviour changes | A parent's guard behaviour diluted | Evaluate it as a skill; keep a guard layer outside the model |
 | Merged model strong on tests, weak in production | Test set from the parents' training data | Hold out data from both parents; test on new customers or formats |
 | Licence violation found late | Parent licence terms not carried | Licence register per parent; legal review before release |
-| Quantized merge worse than 16-bit merge | Rounding erased small deltas | Merge first, quantize second, evaluate the final file ([09](./09-quantization-ptq-and-qat.md)) |
+| Quantized merge worse than 16-bit merge | **Judgment:** rounding erased small deltas | Merge first, quantize second, evaluate the final file ([09](./09-quantization-ptq-and-qat.md)) |
 
 ### Evaluating your version
 
 - **Metric:** your task metric for each skill separately (format validity, domain F1, refusal correctness), plus a general-ability set to catch regression.
-- **Test set:** at least 300 to 500 held-out items per skill (95 percent interval about plus or minus 3 points at 400 items and a 90 percent rate), never drawn from either parent's training data.
+- **Test set:** at least 300 to 500 held-out items per skill (95 percent interval about plus or minus 3 points at 400 items and a 90 percent rate; this guide's arithmetic), never drawn from either parent's training data.
 - **Baselines:** each parent on its own skill, the base model, and a single model trained on the union of the data if you can afford one run.
 - **Stop rule:** accept a merge only if every skill is within a tolerance fixed beforehand (for example 2 points of its parent's score) and the general set does not fall more than 1 point. If no setting passes after a small grid, stop merging and either serve adapters separately or train on the union.
 
 ### Adopt, adapt or skip
 
-**Adopt** merging for two narrow cases: folding several adapters (or one adapter plus an instruction-tuned base) from one base into a single 16-bit file for simpler shipping; and trying to recover general ability by blending a fine-tune back toward its base (an interpolation; its SLM-specific evidence in these papers is thin, so treat it as unverified and test). **Adapt** by keeping the scales and density as part of the artifact record and by running the full test on every candidate. **Skip** merging as a substitute for multi-task training when tasks truly conflict, when parents come from different bases, and when a parent's licence forbids derivatives. For a team with a few high-volume tasks, per-task adapters served with multi-LoRA ([03](../03-vehicles.md)) avoid the interference problem altogether; merge only if shipping one file is worth the testing.
+**Judgment: adopt** merging for two narrow cases: folding several adapters (or one adapter plus an instruction-tuned base) from one base into a single 16-bit file for simpler shipping; and trying to recover general ability by blending a fine-tune back toward its base (an interpolation; its SLM-specific evidence in these papers is thin, so treat it as unverified and test). **Adapt** by keeping the scales and density as part of the artifact record and by running the full test on every candidate. **Skip** merging as a substitute for multi-task training when tasks truly conflict, when parents come from different bases, and when a parent's licence forbids derivatives. For a team with a few high-volume tasks, per-task adapters served with multi-LoRA ([03](../03-vehicles.md)) avoid the interference problem altogether; merge only if shipping one file is worth the testing.
 
 ## Tutorial 3 - Researcher understanding
 
@@ -247,7 +247,7 @@ Toy instance: the worked example, where TIES with k = 3 of 4 gives base + `[0.4,
 | Task arithmetic Section 4.1 | Addition on eight image tasks | 98.9 percent normalised (pairs); 91.2 percent (all eight) | Causal |
 | TIES Table 1 | T5-Base, T5-Large (7 tasks), ViT-B/32, ViT-L/14 (8 tasks) | TIES 73.9 / 76.9 / 73.6 / 86.0 with validation; task arithmetic 73.2 / 73.3 / 70.1 / 84.5; no-validation TIES 69.7 / 74.4 / 72.4 / 86.0 | Causal across methods with same vectors; single runs |
 | DARE Table 1 | WizardLM, WizardMath, code-alpaca at 13B, Task Arithmetic with and without DARE | LM and Math, DARE: GSM8K 66.26 versus 66.34 without; Math alone 64.22; LM and Math and Code, DARE: HumanEval 23.17 versus 18.29 without | Causal within the setup; differences of a point or two are small |
-| DARE Section 4.6 | Delta magnitude | Works when deltas within about 0.002; fails around 0.03 after continued pretraining | Descriptive plus case study |
+| DARE Section 4.6 | Delta magnitude | Works when deltas within about 0.002; fails when deltas exceed about 0.01 (Section 4.6), around 0.03 after continued pretraining (Introduction) | Descriptive plus case study |
 
 ### Ablations and what they isolate
 
@@ -321,10 +321,10 @@ You usually should if the data can sit together and you can afford a rerun: no p
 Not legal advice: the merged weights are a derivative of every parent, so each parent's terms can apply. A custom licence with use restrictions or attribution carries into the merge, and merging with an Apache 2.0 model does not remove it. Check each parent and record revisions.
 
 **Can I merge after quantizing?**
-Avoid it. Rounding to 4 bits can wipe out small deltas, and the merged weights are not on any grid. Merge in 16 bits, then quantize ([09](./09-quantization-ptq-and-qat.md)).
+**Judgment:** avoid it. Rounding to 4 bits can wipe out small deltas, and the merged weights are not on any grid (this guide's inference from how quantization works, not a measured result). Merge in 16 bits, then quantize ([09](./09-quantization-ptq-and-qat.md)).
 
 **Is mergekit maintained and safe to use?**
-It is LGPL-3.0, not archived, with a push in October 2026 per the GitHub API. Treat it like any dependency: pin a version, and note that loading checkpoints can execute code if they are pickle files, so prefer safetensors.
+It is LGPL-3.0, not archived, with a push in October 2026 per the [GitHub API](https://api.github.com/repos/arcee-ai/mergekit). Treat it like any dependency: pin a version. Loading a pickle checkpoint can execute arbitrary code, per the [Hugging Face pickle documentation](https://huggingface.co/docs/hub/security-pickle), so prefer safetensors (which that page names as an alternative format).
 
 ## Prerequisites you actually need
 
@@ -369,13 +369,13 @@ Rescale by 1 / (1 - 0.8) = 5, giving 0.10. In expectation (0.2 survival x 0.10) 
 <details>
 <summary>3. Explain: why can a uniform soup lose to the best single model while a greedy soup does not?</summary>
 
-A uniform soup includes every model, including ones from different basins (high learning rates), which damages the average. A greedy soup only keeps a model if it improves held-out accuracy, so it starts from the best and cannot do worse on that validation set (CLIP: 79.97 uniform, 81.03 greedy).
+A uniform soup includes every model, including ones from different basins (high learning rates), which damages the average ([soups Section 3.3](https://arxiv.org/abs/2203.05482)). A greedy soup only keeps a model if it improves held-out accuracy, so it starts from the best and cannot do worse on that validation set ([soups Table 3](https://arxiv.org/abs/2203.05482), CLIP: 79.97 uniform, 81.03 greedy).
 </details>
 
 <details>
 <summary>4. Critique: "TIES beat task arithmetic by 3.6 points on T5-Large, so use TIES." What is missing?</summary>
 
-Table 1's 76.9 versus 73.3 used a validation set to tune; without it the gap shrank (74.4 versus 73.5) and on T5-Base TIES lost. Also T5 and 7 tasks are not your task, and there is no comparison with training on all the data.
+[TIES Table 1](https://arxiv.org/abs/2306.01708): 76.9 versus 73.3 used a validation set to tune; without it the gap shrank (74.4 versus 73.5) and on T5-Base TIES lost (69.7 versus 73.2). Also T5 and 7 tasks are not your task, and there is no comparison with training on all the data.
 </details>
 
 <details>
@@ -387,5 +387,5 @@ No, or only after legal clearance. The merged weights derive from both parents a
 <details>
 <summary>6. Explain: why merge before quantizing, and what do you re-test?</summary>
 
-Quantization can round away small weight deltas, and merged weights have no grid to match. Merge in 16 bits, quantize, then re-run every skill's test on the exact quantized file.
+**Judgment:** quantization can round away small weight deltas, and merged weights have no grid to match. Merge in 16 bits, quantize, then re-run every skill's test on the exact quantized file.
 </details>
