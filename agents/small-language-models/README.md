@@ -56,6 +56,7 @@ What you give up: general capability, free upgrades when a better base model shi
 | [Technique explainers](techniques/README.md) | What each technique is (LoRA, QLoRA, DoRA, SFT, preference tuning, RL with verifiable rewards, distillation, quantization, mixture of experts, merging, pruning, continued pretraining, constrained decoding), explained at three levels: intuitive, practitioner, researcher |
 | [04 Build and deploy playbook](04-build-and-deploy-playbook.md) | Phases, data, cost arithmetic, evaluation, governance, operations, and a measured case from our own experiments |
 | [05 Neural network anatomy and quantization](05-neural-network-anatomy-and-quantization.md) | What a model is made of (neurons, layers, attention, MLP), where the parameters and memory go, what is tunable by whom, and what quantization does, with a worked 4-bit example. Read first if "weights" or "bits per weight" are fuzzy |
+| [07 Team and agents](07-team-and-agents.md) | What team an SLM project needs (roles, shapes by organisation size, managed versus self-run), how much of the work agents can do with dated evidence, and the human gates that should stay. General for any enterprise |
 | [06 Algorithm or model?](06-algorithm-or-model-use-cases.md) | Is a model's behaviour the same as an algorithm's, should an SLM replace a deterministic algorithm, and where it fits in an app, with network root-cause and personal cash-flow use cases. Every answer is sourced |
 
 ## 4. How this connects to the rest of the lab

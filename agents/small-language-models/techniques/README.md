@@ -18,6 +18,7 @@ Written 2026-11-26. Authoring rules: [AUTHORING.md](AUTHORING.md); structure che
 | 06 | [Preference tuning](06-preference-tuning.md) | DPO, ORPO, KTO: teach "prefer this answer to that one" |
 | 07 | [Reinforcement learning with verifiable rewards](07-rl-with-verifiable-rewards.md) | GRPO and relatives: a deterministic checker supplies the reward |
 | 08 | [Distillation](08-distillation.md) | A small student learns from a larger teacher, with the terms-of-use caveat |
+| 15 | [PEFT methods and the Hugging Face stack](15-peft-methods-and-the-hugging-face-stack.md) | The full PEFT library catalogue (LoRA variants, IA3, VeRA, LoHa, LoKr, OFT, AdaLoRA and more), how Transformers, PEFT, TRL, bitsandbytes and Accelerate fit together, and how to choose |
 | 13 | [Continued pretraining](13-continued-pretraining.md) | Train on a large pile of domain text before tuning |
 
 ## Changing the model, its size, or how it runs
