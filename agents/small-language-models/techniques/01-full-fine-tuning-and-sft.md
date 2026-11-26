@@ -1,0 +1,410 @@
+---
+format: technique-v1
+slug: 01-full-fine-tuning-and-sft
+---
+
+# Full fine-tuning and supervised fine-tuning (SFT)
+
+> **Key papers:** Ouyang et al. (OpenAI), 2022, "Training language models to follow instructions with human feedback" (InstructGPT) - [arXiv 2203.02155](https://arxiv.org/abs/2203.02155). Biderman et al., 2024, "LoRA Learns Less and Forgets Less" - [arXiv 2405.09673](https://arxiv.org/abs/2405.09673) (published in Transactions on Machine Learning Research). Tool documentation: Hugging Face TRL `SFTTrainer`, and MLX-LM `LORA.md`.
+>
+> **Scope:** how to teach a small model a behaviour by showing it (input, ideal answer) pairs and updating every weight. It covers chat templates, loss masking, learning rates, epochs, memory and forgetting. It does not cover preference tuning or reinforcement learning, and it treats low-rank methods only as the thing full tuning is compared with ([02 LoRA](./02-lora.md), [03 QLoRA](./03-qlora.md), [04 DoRA](./04-dora.md)).
+
+Written 2026-11-26. Library defaults and versions change; the TRL page read for this guide was the v1.19.0 documentation.
+
+## Read this first
+
+**The idea in one sentence.** Supervised fine-tuning (SFT) shows a pretrained model many examples of a prompt followed by the answer you want ([TRL describes SFT as training on "pairs of input and output sequences"](https://huggingface.co/docs/trl/sft_trainer#looking-deeper-into-the-sft-method)), and nudges the model's weights so that, given the prompt, it would have written that answer; "full" fine-tuning means every weight is allowed to move.
+
+**Who this is for.** A technical leader or engineer deciding how a small language model (SLM) will be taught a narrow job over private documents: format, extraction, classification, tool calls. No machine-learning background is needed for Tutorial 1.
+
+**Afterwards you will be able to** write an SFT training example in chat format; say which tokens the loss counts and why that matters; estimate the memory a full fine-tune needs for a 4-billion-parameter model; choose a starting learning rate and number of epochs; and explain what the best public evidence says about full tuning versus low-rank adapters.
+
+**Reading time.** About 45 minutes; Tutorial 1 alone is about 15.
+
+**Have read first (reading order, no claim):** nothing is required. Useful: the lab's [InstructGPT guide](../../../llm-learning-repository/tutorials/02-building/08-instructgpt.md) for the large-scale story, and [01 Options and trade-offs](../01-options-and-trade-offs.md) for where SFT sits among the methods. Read next: [02 LoRA](./02-lora.md).
+
+**The one thing most people get wrong.** SFT is mostly a way to change how a model behaves, not what it knows. A model tuned on a few thousand examples learns the format, tone and habits of the answers; it does not reliably absorb new facts from them ([01 §1](../01-options-and-trade-offs.md#1-first-decide-whether-to-change-weights-at-all)). A second trap sits underneath (this guide's reading of the loss definition in [TRL's documentation](https://huggingface.co/docs/trl/sft_trainer#computing-the-loss)): if the loss is counted on the prompt tokens as well as the answer, the model spends effort learning to predict questions. **Judgment:** when a fine-tune gets worse, check the template and the mask before the optimiser; this guide has no count of failure reports behind that ordering.
+
+## The technique in one worked example
+
+This example is **constructed by this guide**. Token counts are illustrative: a real tokenizer splits text differently, so treat each "token" below as one piece. The arithmetic can be checked by hand.
+
+**Task.** Teach a small model to pull a due date out of a sentence and answer as JSON.
+
+**Step 1 - one training pair, as data.** In the conversational format TRL accepts (documentation, "Expected dataset type and format"):
+
+```json
+{"messages": [
+  {"role": "user", "content": "Extract the due date: Please pay by 14 March 2027."},
+  {"role": "assistant", "content": "{\"due_date\": \"2027-03-14\"}"}
+]}
+```
+
+**Step 2 - the chat template turns it into one string.** Using the ChatML layout that Qwen models use ([TRL documentation](https://huggingface.co/docs/trl/sft_trainer) shows `<|im_start|>` and `<|im_end|>`):
+
+```text
+<|im_start|>user
+Extract the due date: Please pay by 14 March 2027.<|im_end|>
+<|im_start|>assistant
+{"due_date": "2027-03-14"}<|im_end|>
+```
+
+**Step 3 - pretend tokens (constructed by this guide).** Say the first four lines (everything up to and including `<|im_start|>assistant` and the newline) come to **20 tokens** and the answer `{"due_date": "2027-03-14"}<|im_end|>` comes to **6 tokens**. The sequence is 26 tokens.
+
+**Step 4 - next-token losses (constructed by this guide).** For each position the model gives the probability of the true next token; the loss is minus the natural log of it (the negative log-likelihood, NLL, as [TRL's documentation](https://huggingface.co/docs/trl/sft_trainer#computing-the-loss) describes it). Suppose the six answer tokens cost 0.9, 0.4, 0.2, 0.1, 0.6 and 0.3, summing to **2.5**, and each of the 20 prompt tokens costs 2.0 (free text is hard to predict), summing to **40**.
+
+**Step 5 - with loss masking on the assistant answer.** Only the 6 answer tokens count: loss = 2.5 / 6 = **0.4167** (this guide's arithmetic). This is what `assistant_only_loss=True` asks TRL to do ([TRL, "Train on assistant messages only"](https://huggingface.co/docs/trl/sft_trainer#train-on-assistant-messages-only)).
+
+**Step 6 - without masking.** All 26 tokens count: (40 + 2.5) / 26 = **1.635** (this guide's arithmetic; the prompt-only average of 2.0 dominates). The gradient now mostly teaches the model to predict instructions; the answer is 6 of 26 positions.
+
+**Step 7 - one update (illustrative, constructed by this guide).** Backpropagation finds, for every weight, how much a small change would reduce the masked loss. With full fine-tuning, every one of the roughly 4 billion weights in a 4B model gets its own gradient and its own Adam update, using a learning rate such as 2e-5 (the [`SFTConfig` default](https://huggingface.co/docs/trl/sft_trainer#trl.SFTConfig)). After a few hundred such updates over a few thousand pairs, the model gives `{"due_date": "2027-03-14"}` and then stops at `<|im_end|>`.
+
+```mermaid
+flowchart LR
+  A["messages list: user + assistant"] -->|"chat template renders text"| B["one string with role markers"]
+  B -->|"tokenizer splits into ids"| C["26 token ids"]
+  C -->|"labels copy ids; prompt ids set to -100"| D["20 masked + 6 trained positions"]
+  D -->|"cross-entropy on 6 positions = 0.4167"| E["gradient for every weight"]
+  E -->|"AdamW step at learning rate 2e-5"| F["updated model"]
+```
+
+Notice that the mask is applied to the *labels*, not to the input: the model still reads the whole prompt; it just is not graded on reproducing it. The value `-100` is the "ignore" index that [TRL documents](https://huggingface.co/docs/trl/sft_trainer#label-shifting-and-masking) for padding positions, and TRL's description of pre-tokenized data says `labels` carry `-100` "on tokens excluded from the loss" ([SFTTrainer reference](https://huggingface.co/docs/trl/sft_trainer#trl.SFTTrainer)), which is the mechanism a prompt mask uses.
+
+Every later section refers back to this pair, the 20-versus-6 token split, and the loss figures 0.4167 and 1.635.
+
+## Words you need
+
+| Term | Plain definition | In the worked example |
+|---|---|---|
+| Supervised fine-tuning (SFT) | Training on (prompt, ideal answer) pairs with the ordinary next-token loss | The due-date pair |
+| Full fine-tuning | SFT where every weight can change | All roughly 4 billion weights get gradients |
+| Chat template | A recipe that turns a list of role-tagged messages into one string with special marker tokens | The start-of-turn and end-of-turn marker text in Step 2 |
+| Loss masking | Excluding some positions (usually the prompt) from the loss | 20 masked, 6 counted |
+| Cross-entropy / NLL | Minus the log of the probability the model gave the true next token | 0.9, 0.4, 0.2 ... per answer token |
+| Learning rate (LR) | The size of each weight update step | 2e-5 for full tuning |
+| Epoch | One full pass over the training set | [LoRA Learns Less, Table S5](https://arxiv.org/html/2405.09673) reports epochs 1, 2, 4, 8 and 16 |
+| Optimizer state | Extra numbers Adam keeps for each weight (a running mean and a running squared mean of gradients) | Two extra numbers per weight, so 8 billion for a 4B model |
+| Catastrophic forgetting | Losing earlier abilities while learning the new one | The tuned model forgets how to answer in prose |
+
+## Tutorial 1 - Intuitive understanding
+
+### What was broken before
+
+A pretrained language model is a very good autocomplete. Given "Extract the due date: Please pay by 14 March 2027." it might continue with another instruction, a translation, or a forum reply (**Judgment:** an illustration, not a measured behaviour). The [InstructGPT paper](https://arxiv.org/html/2203.02155) states the gap in its abstract: language models are "not aligned with their users" and bigger models are not inherently better at following intent, and the authors' first fix was to fine-tune on demonstrations written by labelers ([arXiv 2203.02155](https://arxiv.org/abs/2203.02155), Section 3).
+
+**Judgment:** prompting can bridge some of that gap: write a long instruction and a few examples at the top of every request. It works until the prompt gets long, the model changes, or the format must be exact on every call; each request then pays for the long prompt again, and a hosted-model update can change behaviour.
+
+### The idea
+
+SFT writes the behaviour into the model. You collect pairs of prompts and the answers you wish the model had given, and you train on them. Every example is a tiny lesson: "in this situation, say this."
+
+**Analogy.** A new employee with a degree (the pretrained model) is given a binder of 3,000 solved cases from your own office and told to study it until the answers come out in house style. After enough study they stop asking what format you want. Full fine-tuning is letting them rewrite their whole way of working: every habit is up for revision.
+
+**Where the analogy breaks (Judgment).** A person who studies solved cases also learns the reasons and can explain them; the model learns patterns of text, not stated reasons. A person forgets a skill slowly and knows they did; a tuned model can lose skills outside the training domain, which the [LoRA Learns Less authors measured](https://arxiv.org/html/2405.09673) (Tutorial 3, forgetting), so you must test for it. And studying cases makes a person know the case facts; training on them does not reliably give the model the facts, which is why facts belong in retrieval.
+
+### How it works, step by step
+
+1. **Write the pairs.** Each has an input and the exact output you want, including its format. Quality and consistency matter more than volume: QLoRA's authors report that a 9k-sample dataset (OASST1, limited to 9,209 examples in Appendix B.1) outperformed a 450k-sample subsample of FLAN v2 on chatbot performance ([arXiv 2305.14314](https://arxiv.org/html/2305.14314), Section 1 and Appendix B.1); that is a chatbot result and a hint, not a rule.
+2. **Render with the chat template.** Instruction-tuned models were trained on one exact layout of role markers. Using a different layout at training than at serving is a common cause of broken behaviour ([01 failure modes](../01-options-and-trade-offs.md#failure-modes-you-should-plan-for)).
+3. **Mark which text is graded.** Usually only the assistant's answer. This is the loss mask.
+4. **Show the model batches.** For each batch the model guesses each next token of the graded text; the training code measures how surprised it was.
+5. **Update the weights.** An optimiser (TRL's default is `adamw_torch_fused`, per the [`SFTConfig` reference](https://huggingface.co/docs/trl/sft_trainer#trl.SFTConfig)) moves each weight a little in the direction that would have reduced the surprise. The size of the move is the learning rate.
+6. **Repeat for a few epochs and watch a held-out set.** Stop when held-out quality stops improving.
+
+### What the evidence says
+
+- **At large scale it works for behaviour.** The [InstructGPT paper](https://arxiv.org/html/2203.02155) reports that a 1.3-billion-parameter model trained with human demonstrations plus a later reinforcement-learning step produced outputs people preferred to those of the 175-billion-parameter base model (abstract; Figure 1 caption), and that 175B InstructGPT outputs were preferred to GPT-3 outputs 85 plus or minus 3 percent of the time (Section 4.1). In plain terms: out of every 100 comparisons about 85 went to the tuned model. Note that the headline model used SFT *and* reinforcement learning from human feedback, so this is not a measurement of SFT alone.
+- **The SFT stage used modest data.** The [paper's](https://arxiv.org/html/2203.02155) SFT dataset had about 13,000 training prompts (Section 3.2), against 33,000 for the reward model and 31,000 for the reinforcement-learning stage.
+- **Full tuning versus adapters.** On two domains (code and maths) with Llama-2-7B, the [LoRA Learns Less authors](https://arxiv.org/html/2405.09673) report that standard low-rank adapters learn less than full tuning but forget less of what the model could do before ([arXiv 2405.09673](https://arxiv.org/abs/2405.09673), abstract and Sections 4.1 to 4.3). **Judgment:** full fine-tuning is therefore the higher-ceiling, higher-forgetting option.
+
+### What this does not show
+
+- It does not show that SFT adds knowledge. The cited results measure instruction following, code and maths benchmarks, and chatbot preference, not recall of new private facts.
+- The InstructGPT numbers come from the authors' own prompt distribution and their contracted labelers, with a model more than 100 times larger as the comparison (175B / 1.3B is about 135, this guide's arithmetic); it does not say a 1.3B model is as good as a 175B one in general.
+- The [LoRA Learns Less](https://arxiv.org/html/2405.09673) study uses one 7B base model (Llama-2-7B) and two domains with large datasets (up to 20 billion tokens of continued pretraining, 110K to 395K instruction pairs; Section 3). **Judgment:** a team with 3,000 examples is in a different regime, and the instruction-tuning half of that paper is closer to it.
+- None of these studies is about an enterprise's private documents. See Tutorial 2 for what to measure yourself.
+
+### Teach-back
+
+<details>
+<summary>1. In the worked example, why is the unmasked loss (1.635) so much higher than the masked loss (0.4167), and why does that hurt?</summary>
+
+Because 20 of the 26 positions are prompt tokens, which are hard to predict (2.0 each in the example, constructed by this guide). They swamp the 6 answer tokens. The gradient then mostly teaches the model to imitate instructions instead of answering them.
+</details>
+
+<details>
+<summary>2. What does "full" mean in full fine-tuning, and what is the cost of that choice?</summary>
+
+Every weight is trainable. The cost is memory (gradients and two optimizer numbers per weight on top of the weights; see the table in Tutorial 2, this guide's arithmetic), one full model copy per task, and more forgetting of earlier abilities ([LoRA Learns Less, abstract](https://arxiv.org/abs/2405.09673)).
+</details>
+
+<details>
+<summary>3. Why can a model trained with one chat template and served with another misbehave?</summary>
+
+It learned to act when it sees one set of marker tokens in a certain layout. At serving it sees a different layout, so the learned behaviour is not triggered, or the model fails to emit the end-of-turn marker and rambles (**Judgment:** an inference; [TRL](https://huggingface.co/docs/trl/sft_trainer#instruction-tuning-example) says it adds the end-of-turn token to the stop tokens so trained responses terminate).
+</details>
+
+## Tutorial 2 - Practitioner understanding
+
+### The design in concrete terms
+
+**Data format.** TRL's `SFTTrainer` accepts four shapes (documentation, "Expected dataset type and format", detailed on the [dataset formats page](https://huggingface.co/docs/trl/dataset_formats)): plain `{"text": ...}`, conversational `{"messages": [...]}`, prompt-completion `{"prompt": ..., "completion": ...}`, and conversational prompt-completion where both are message lists. When the dataset is conversational the trainer applies the chat template automatically. MLX-LM expects `.jsonl` files: `train.jsonl` is needed for `--train`, `valid.jsonl` is optional, and the formats are `chat` (a `messages` list), `tools`, `completions` (`prompt` and `completion`) or `text` ([MLX-LM `LORA.md`](https://github.com/ml-explore/mlx-lm/blob/main/mlx_lm/LORA.md)).
+
+**Chat templates.** A template is a Jinja recipe stored with the tokenizer ([Transformers chat templating guide](https://huggingface.co/docs/transformers/chat_templating)); [TRL applies it automatically to conversational data](https://huggingface.co/docs/trl/sft_trainer#expected-dataset-type-and-format).
+
+**Loss masking.** In [TRL](https://huggingface.co/docs/trl/sft_trainer#train-on-completion-only), for a prompt-completion dataset the loss is on the completion only by default; `completion_only_loss=False` trains on everything. For a `messages` dataset set `assistant_only_loss=True`; this requires the chat template to contain `{% generation %}` and `{% endgeneration %}` markers, which TRL patches in automatically for known families such as Qwen3 and which you must check yourself for others (documentation, "Train on assistant messages only"). In MLX-LM the flag is `--mask-prompt`, valid for `chat` and `completion` data ([`LORA.md`](https://github.com/ml-explore/mlx-lm/blob/main/mlx_lm/LORA.md)).
+
+**Settings that matter.** From the [TRL v1.19.0 `SFTConfig` documentation](https://huggingface.co/docs/trl/sft_trainer#trl.SFTConfig): `learning_rate` default 2e-5; `num_train_epochs` default 3.0; `per_device_train_batch_size` 8; `max_length` 1024 (longer sequences are truncated from the end, `truncation_mode="keep_start"`); `lr_scheduler_type` "linear"; `optim` "adamw_torch_fused"; `max_grad_norm` 1.0; `gradient_checkpointing` defaults to True in SFTConfig; `bf16` defaults to True unless `fp16` is set; `packing` False; `assistant_only_loss` False. If you pass a model by name and set no dtype, the [`SFTTrainer` reference](https://huggingface.co/docs/trl/sft_trainer#trl.SFTTrainer) says it defaults to `float32` (**Judgment:** the most memory-hungry option of the three in the table below).
+
+**Learning rate and epochs from the evidence.** The LoRA Learns Less authors tuned full fine-tuning at 1e-5 for maths instruction tuning and found 5e-5 best in their code instruction sweep ([Appendix B](https://arxiv.org/html/2405.09673)). They recommend setting LoRA's best learning rate "one order of magnitude higher" than full fine-tuning's ([Section 4.7](https://arxiv.org/html/2405.09673)). [TRL's docs](https://huggingface.co/docs/trl/sft_trainer#train-adapters-with-peft) say adapters typically use a higher learning rate (about 1e-4). **Judgment:** for full tuning of an SLM, start at 1e-5 to 2e-5, with a short warmup and a linear or cosine decay, and sweep within a factor of 3. For epochs, that paper reports results at 1 to 16 epochs of instruction data (Table S5); [InstructGPT](https://arxiv.org/html/2203.02155) used 16 epochs with cosine decay and dropout of 0.2 and observed validation loss rising after the first epoch while human preference kept improving (Section 3.5). **Judgment:** both facts argue against stopping on validation loss alone; judge checkpoints on task metrics.
+
+### A minimal version
+
+Unrun by this guide. It uses real TRL argument names from the documentation read on 2026-11-26. Shapes: the dataset has rows with a `messages` list; the output is a directory with full model weights.
+
+```python
+# Unrun. pip install trl datasets   (GPU with enough memory; see "What it costs")
+import torch
+from datasets import load_dataset
+from trl import SFTConfig, SFTTrainer
+
+ds = load_dataset("json", data_files={"train": "train.jsonl", "validation": "valid.jsonl"})
+# each row: {"messages": [{"role": "user", ...}, {"role": "assistant", ...}]}
+
+args = SFTConfig(
+    output_dir="out-fullft",
+    model_init_kwargs={"dtype": torch.bfloat16},   # avoid the float32 default
+    learning_rate=1e-5,
+    num_train_epochs=2,
+    per_device_train_batch_size=4,
+    gradient_accumulation_steps=4,                 # effective batch 16
+    max_length=2048,
+    assistant_only_loss=True,                      # needs {% generation %} in template
+    lr_scheduler_type="cosine",
+    warmup_steps=20,
+    eval_strategy="steps", eval_steps=50,
+    save_strategy="steps", save_steps=50,
+    logging_steps=10,
+    gradient_checkpointing=True,
+)
+trainer = SFTTrainer(
+    model="Qwen/Qwen3-4B-Base",     # example id; choose your own base and check its licence
+    args=args,
+    train_dataset=ds["train"],
+    eval_dataset=ds["validation"],
+)
+trainer.train()
+trainer.save_model("out-fullft/final")
+```
+
+Apple-silicon route (unrun): `mlx_lm.lora --model <path> --train --data ./data --fine-tune-type full --mask-prompt --batch-size 2 --iters 600 --grad-checkpoint`. The [MLX-LM page](https://github.com/ml-explore/mlx-lm/blob/main/mlx_lm/LORA.md) says "Currently supported fine-tuning types are `lora` (default), `dora`, and `full`", saves the adapter config and learned weights under `adapters/` by default, and suggests `--grad-checkpoint`, a smaller `--batch-size` and shorter examples to save memory. It did not document a `--learning-rate` flag on the page read; check `mlx_lm.lora --help` (unverified here).
+
+### What it costs
+
+Assumption: a 4-billion-parameter model (4.0 x 10^9 weights), AdamW, activations excluded. Arithmetic by this guide (every figure in this section is this guide's arithmetic), using the standard bytes-per-number accounting; the "16 bytes per weight" rule of thumb for mixed precision is common knowledge but its source paper was not fetched here (unverified).
+
+| Setup | Weights | Gradients | Adam state (2 numbers) | Total before activations |
+|---|---|---|---|---|
+| All float32 (what TRL loads by default if you give no dtype) | 4 bytes: 16 GB | 4 bytes: 16 GB | 8 bytes: 32 GB | **64 GB** |
+| bf16 weights and gradients, float32 Adam state | 2 bytes: 8 GB | 2 bytes: 8 GB | 8 bytes: 32 GB | **48 GB** |
+| bf16 everything, 8-bit Adam state (bitsandbytes 8-bit optimizers) | 8 GB | 8 GB | 2 bytes: 8 GB | **24 GB** |
+
+**Judgment:** a full fine-tune of a 4B model wants a 48 to 80 GB GPU in the safer settings. The [bitsandbytes documentation](https://huggingface.co/docs/bitsandbytes/main/en/optimizers) says 8-bit optimizers let large models be fine-tuned with "75% less GPU memory" and that the saving is proportional to parameter count, not activations; the third row is this guide's arithmetic assuming one byte per Adam number (a 75 percent cut of the 32 GB state), not a measured run. Activations add more: in our own measurement a single 8,700-token sequence made the output logits alone about 10 GB ([01 Options §2](../01-options-and-trade-offs.md#memory-as-a-first-estimate)).
+
+### How it fails
+
+**Judgment:** the causes and mitigations below are this guide's diagnoses unless a source is named.
+
+| Symptom | Likely cause | Mitigation |
+|---|---|---|
+| Outputs ramble or never stop | Template at serving differs from training, or the end-of-turn token was not in the labels | Use one template for both; check that the end-of-turn marker (for Qwen, im_end) is in the trained span; test through the real runtime |
+| Loss falls fast but answers still wrong | Loss counted on prompt tokens; or labels misaligned | Turn on assistant-only loss; print one batch with labels and confirm prompt labels are -100 |
+| Validation loss rises after epoch 1 but quality improves | Seen in [InstructGPT Section 3.5](https://arxiv.org/html/2203.02155) | Choose checkpoints by task metric on a held-out set, not by loss |
+| General skills degrade (other languages, instructions) | Catastrophic forgetting; LR too high; too many epochs | Lower LR; fewer epochs; mix in 5 to 20 percent general data (a common practice, unverified as a rule); compare with an adapter |
+
+### Evaluating your version
+
+**Metric (Judgment).** A deterministic score on the task: exact match on extracted fields, schema validity rate, and the wrong-but-confident rate. Add a small general regression set (instruction following, a second language, a few reasoning items) to detect forgetting.
+
+**Test set (Judgment).** At least 200 held-out items for a first read, split by the thing that is new in production (a new source or format), not by random row.
+
+**Baseline (Judgment).** The same base model with the best prompt you can write, plus few-shot examples, and the same model with retrieval. If SFT does not beat that by a margin you fixed in advance, do not ship it.
+
+**Stop rule (Judgment).** Evaluate every 50 steps. Stop when two consecutive evaluations fail to improve the primary metric, or when the general regression set drops by more than a threshold you set before the run (for example 3 points). Keep the best checkpoint by the primary metric, chosen by a rule fixed before looking at results.
+
+### Adopt, adapt or skip
+
+**Judgment (Adapt).** For an enterprise building a small model over private documents: use SFT for behaviour, never for knowledge. Start with a low-rank adapter ([02 LoRA](./02-lora.md), tooling in [PEFT](https://huggingface.co/docs/peft/package_reference/lora)); Unsloth's guide, a vendor source, says full fine-tuning "is usually unnecessary" and that LoRA done correctly can match it ([Unsloth fine-tuning guide](https://unsloth.ai/docs/get-started/fine-tuning-llms-guide)) (**Judgment:** because it is cheaper, easier to roll back, and forgets less on the evidence in Tutorial 3). Choose full fine-tuning only if three things are true: an adapter at a high rank on all linear layers plateaus below your quality bar after a learning-rate sweep; you have enough clean examples to justify a higher ceiling (the paper's gaps are measured on 110K to 395K instruction pairs and up to 20 billion tokens, [Section 3](https://arxiv.org/html/2405.09673), much more than a typical enterprise set); and you can afford one full copy per task plus a regression suite. Skip full tuning on a team with one small GPU: the memory in the table above is the first wall, and the answer there is QLoRA ([03](./03-qlora.md)). Always keep the SFT step even when you later add preference tuning, because it teaches the format the later stages assume.
+
+## Tutorial 3 - Researcher understanding
+
+### Formal setup
+
+**Notation (defined once).** The model has parameters θ and defines p_θ(y_t | y_<t), the probability of next token y_t given all earlier tokens (prompt and answer). A training example is a token sequence y_1..y_T, rendered by the chat template. A mask m_t in {0, 1} marks graded positions; M is the set where m_t = 1. The SFT loss is
+
+L(θ) = - (1 / |M|) * Σ_{t in M} log p_θ(y_t | y_<t)
+
+([TRL's documentation](https://huggingface.co/docs/trl/sft_trainer) writes the sum without the average; the logged `loss` is "the average cross-entropy loss computed over non-masked tokens"). Full fine-tuning minimises L over all of θ with AdamW. Forgetting (this guide's definition, close to [the paper's use](https://arxiv.org/html/2405.09673)) is the drop in performance on a benchmark set B that is not part of the target domain after training.
+
+**Numeric toy instance (this guide's arithmetic).** Take the worked example: T = 26, |M| = 6 with masked NLLs 0.9, 0.4, 0.2, 0.1, 0.6, 0.3. Then L = 2.5 / 6 = 0.4167. If M were all 26 positions with 20 prompt NLLs of 2.0, L = 42.5 / 26 = 1.635. The loss values differ by a factor of about 3.9, and the gradient is dominated by prompt positions in the second case.
+
+```mermaid
+flowchart TD
+  P["pretrained weights theta0"] -->|"SFT loss on masked positions"| G["gradient over all weights"]
+  G -->|"AdamW with learning rate"| S["theta after SFT"]
+  S -->|"evaluate on target task"| T["learning: gain on target domain"]
+  S -->|"evaluate on general benchmarks"| F["forgetting: drop outside the domain"]
+  T --> R["trade-off curve"]
+  F --> R
+```
+
+The diagram shows the two measurements every full fine-tune should produce. Learning and forgetting are separate numbers; the LoRA Learns Less paper's contribution is to plot them against each other.
+
+### The claims, stated precisely
+
+1. **[InstructGPT](https://arxiv.org/html/2203.02155) (arXiv 2203.02155).** Fine-tuning GPT-3 with labeler demonstrations (SFT), then a reward model and reinforcement learning with proximal policy optimisation (PPO), gives outputs that labelers prefer: 175B InstructGPT beats 175B GPT-3 85 plus or minus 3 percent of the time and few-shot GPT-3 71 plus or minus 4 percent of the time (Section 4.1). The abstract and Figure 1 report that the 1.3B model is preferred to 175B GPT-3. The default PPO model suffers an "alignment tax" (worse on several public NLP datasets, Sections 1 and 4.2), which mixing pretraining updates into PPO (the PPO-ptx variant) "greatly" reduces according to Section 1.
+2. **SFT training details ([Section 3.5](https://arxiv.org/html/2203.02155)).** 16 epochs, cosine learning-rate decay, residual dropout 0.2; the SFT models overfit on validation loss after one epoch, yet more epochs help the reward-model score and human preference. The learning rate is in Appendix C.1, which was not read (unverified).
+3. **[LoRA Learns Less](https://arxiv.org/html/2405.09673) (Biderman et al.).** On Llama-2-7B, in code and maths, with both continued pretraining (up to 20B tokens) and instruction fine-tuning (110K code pairs, 395K maths pairs; Section 3), (a) LoRA at typical ranks underperforms full fine-tuning; (b) LoRA forgets less of the base model's performance outside the target domain; (c) full fine-tuning learns perturbation matrices whose rank is 10 to 100 times higher than typical LoRA ranks (Section 4.6).
+
+What none of them claims (this guide's reading): that SFT teaches facts, that results transfer to other model families or to data under a few thousand examples, or that the preference-based numbers isolate the SFT stage.
+
+### Evidence, table by table
+
+**[InstructGPT](https://arxiv.org/html/2203.02155), Figure 1 and Section 4.1.** Human preference win rates by model size. Headline: 85 plus or minus 3 percent versus GPT-3 and 71 plus or minus 4 percent versus few-shot GPT-3 for the 175B model. *Identifies:* the combined pipeline beats the base on the authors' prompts. *Does not isolate:* SFT versus the later stages in these rows; the paper has separate SFT, PPO and PPO-ptx curves, which this guide did not extract.
+
+**[LoRA Learns Less](https://arxiv.org/html/2405.09673), Table S5 (code instruction fine-tuning, Magicoder-Evol-Instruct-110K, HumanEval pass@1; checked against the HTML).** At epoch 4: LoRA rank 16 scores 0.358, rank 64 0.417, rank 256 0.498, and full fine-tuning 0.470; full fine-tuning reaches 0.497 at epoch 8. In plain terms (this guide's arithmetic): out of every 100 problems, a rank-16 adapter solves about 36, full tuning about 47 and a rank-256 adapter about 50. This is a measured comparison (same data, same base, swept learning rates), so it identifies the effect of rank on this setup; it is one model, one dataset, one benchmark.
+
+**Forgetting, Tables S2, S6, S8 ([paper](https://arxiv.org/html/2405.09673)).** Code continued pretraining at 20B tokens: full 0.545 versus LoRA rank 256 at 0.617. Code instruction tuning: full 0.414 versus LoRA rank 64 at 0.509 (the text; Table S6 lists 0.510). Higher means more of the base model's general performance retained. The forgetting score is the average of HellaSwag, ARC-Challenge and Winogrande (Section 4.2, Figure 2 caption); the paper does not define "higher is better" explicitly, so reading higher as less forgetting is this guide's inference from the abstract. Maths instruction tuning at 16 epochs (Table S8): LoRA rank 256 at 0.567 versus full 0.559, a difference too small to read (this guide's judgment).
+
+**[Section 4.6 and Figure 6](https://arxiv.org/html/2405.09673).** The full fine-tuning update has high rank from early on and the rank grows with data; for layer 26's query matrix the text says roughly 2,000 of 4,096 singular directions are needed for 90 percent of the variance (the Figure S7 caption says a rank above 1,500 is needed, so treat the figure as approximate). *Associates:* the authors argue this may explain the gap; the figure shows the rank, not that the rank causes the gap.
+
+### Ablations and what they isolate
+
+- **Learning-rate sweeps (Appendix B, Section 4.7):** the paper states that "LoRA is more sensitive to learning rates compared to full finetuning" and recommends sweeping [1e-5, 5e-4] and picking the highest value that enables stable training ([Section 4.7](https://arxiv.org/html/2405.09673)). **Judgment:** results at a single rate can therefore mislead.
+
+### Threats to validity
+
+- **One base model.** The paper's own experiments use Llama-2-7B only, including the Tulu-v2-mix runs ([Section 4.4 and Appendix C](https://arxiv.org/html/2405.09673)). **Judgment:** current small models (Qwen, Gemma, Llama 3 families) may behave differently; the guide has no source on how.
+
+### Open problems and follow-ups
+
+- **Judgment (open question):** whether the rank gap shrinks on instruction-sized data for current 4B to 14B models.
+
+### What would change my mind
+
+- **Judgment:** a replication on a current small model showing full fine-tuning forgets no more than rank-64 adapters at the same target-task score would remove the main reason to prefer adapters.
+
+## Reading map for the key papers
+
+| Paper section or figure | What it contains | Read / skim / skip | Answered in this guide |
+|---|---|---|---|
+| InstructGPT Abstract, Figure 1 | Headline preference result, 1.3B versus 175B | Read | Tutorial 1, evidence |
+| InstructGPT Section 3.2, Table 6 | Dataset sizes and sources | Read | Tutorial 3, claims |
+| InstructGPT Section 3.5 | SFT epochs, schedule, dropout, overfitting remark | Read | Tutorial 2, design |
+| InstructGPT Section 4.1, 4.2 | Win rates; alignment tax and PPO-ptx | Skim | Tutorial 3, claims |
+| InstructGPT Appendix C.1 | SFT learning rate and batch details | Skim (not read here) | Marked unverified |
+| LoRA Learns Less Sections 1 to 3 | Setup, models, datasets (Table 1) | Read | Tutorial 3, evidence |
+| LoRA Learns Less Section 4.1 and Tables S1, S3, S5, S7 | Learning curves and numbers | Read | Tutorial 3, evidence |
+| LoRA Learns Less Sections 4.2, 4.3, Tables S2, S4, S6, S8 | Forgetting | Read | Tutorial 3, evidence |
+| LoRA Learns Less Sections 4.5, 4.6 | Regularisers; rank of full-tuning updates | Skim | Tutorial 3, ablations |
+| LoRA Learns Less Section 4.7, Appendices A, B | Learning-rate guidance and sweeps | Read | Tutorial 2, design |
+| TRL `SFTTrainer` and `SFTConfig` documentation | Data formats, masks, defaults | Read | Tutorial 2 |
+| MLX-LM `LORA.md` | Apple-silicon training flags and data formats | Read | Tutorial 2 |
+
+## Questions readers get stuck on
+
+**Is "SFT" different from "instruction tuning" and "fine-tuning"?** Fine-tuning is the general word for continuing training. SFT is fine-tuning on pairs with a supervised next-token loss. Instruction tuning is SFT where the pairs are instructions and responses. **Judgment:** in practice teams use the three words nearly interchangeably; the mechanism in this guide is the same.
+
+**Why does the model need a chat template at all?** The model only sees a stream of tokens. Special marker tokens tell it where a user turn ends and where its own answer begins. If you train with markers it has not seen (or in a different layout) it must learn the layout from your small dataset; if you serve with a different layout than you trained with, the learned habit does not fire. [TRL's documentation](https://huggingface.co/docs/trl/sft_trainer#instruction-tuning-example) also notes that it adds the template's end-of-turn token to the generation stop tokens so responses terminate.
+
+**Should I always mask the prompt?** **Judgment:** usually yes for a narrow task, because it focuses the update on the answer. [TRL defaults to completion-only loss for prompt-completion data](https://huggingface.co/docs/trl/sft_trainer#train-on-completion-only). The mask is a choice, not a law: if you want the model to learn a new document style from raw text, loss on all tokens is the point. This guide found no primary source comparing the two on small SFT sets (unverified).
+
+**Why does validation loss rise while quality improves?** [InstructGPT](https://arxiv.org/html/2203.02155) reports exactly this (Section 3.5): after one epoch the SFT models overfit on validation loss, yet more epochs improved reward-model scores and human preference. Loss measures how well the model predicts the one reference answer; many different answers can be good. Rely on task metrics for checkpoint choice.
+
+**How much data do I need?** The best verified hints are dataset sizes: about 13,000 prompts for [InstructGPT's SFT](https://arxiv.org/html/2203.02155) (Section 3.2), and a 9,209-example dataset beating a 450k subsample for [QLoRA's chatbot](https://arxiv.org/html/2305.14314) (Section 1). For a narrow task, hundreds to low thousands is the usual starting range, but the lab's own README marks that as unverified ([README](../README.md)). Plot a learning curve at 25, 50 and 100 percent of your data.
+
+**Why not just fine-tune on all my documents so the model knows them?** Training on raw documents is continued pretraining, a different regime. [Ovadia et al.](https://arxiv.org/abs/2312.05934) found that retrieval beat unsupervised fine-tuning for knowledge, as summarised in [01 §1](../01-options-and-trade-offs.md#1-first-decide-whether-to-change-weights-at-all). Fine-tune behaviour; retrieve facts.
+
+**Why not a bigger learning rate to finish faster?** Full fine-tuning is sensitive: too high and the model forgets or diverges. The paper's full-tuning rates were 1e-5 to 5e-5 ([Appendix B](https://arxiv.org/html/2405.09673)) and it recommends LoRA rates one order of magnitude higher (Section 4.7), so **Judgment:** copying an adapter recipe onto a full tune is a classic mistake.
+
+**What is the difference between 3 epochs in TRL's default and 16 in InstructGPT?** TRL's 3.0 is the [`SFTConfig` default](https://huggingface.co/docs/trl/sft_trainer#trl.SFTConfig). InstructGPT's 16 epochs are reported in [Section 3.5](https://arxiv.org/html/2203.02155), alongside the observation that more epochs helped preference scores, on about 13,000 SFT prompts. The right number for you is whatever your held-out task metric says, and it depends on dataset size and learning rate together.
+
+## Prerequisites you actually need
+
+### Prerequisite 1 - Next-token prediction and cross-entropy
+
+**Plain explanation.** A language model outputs, for each position, a probability for every possible next token. The cross-entropy loss for a position is minus the natural logarithm of the probability given to the true token. A confident correct guess costs little; a confident wrong guess costs a lot.
+
+**Tiny example (this guide's arithmetic).** If the model gives the true token probability 0.5, the loss is -ln 0.5 = 0.693; at probability 0.9 it is 0.105; at 0.1 it is 2.303. Averaging the six answer-token losses in the worked example gives 0.4167.
+
+**Where used.** Every SFT step and the masked average in Tutorial 3.
+
+**Pointer (reference only, no claim).** [Glossary](../../../llm-learning-repository/references/glossary.md) and the [Transformer guide](../../../llm-learning-repository/tutorials/01-foundations/01-transformer.md).
+
+### Prerequisite 2 - Bytes per number and what Adam stores
+
+**Plain explanation.** A number stored in 32-bit float takes 4 bytes; in 16-bit (bf16 or fp16) 2 bytes; in 8-bit 1 byte (arithmetic of the formats). Adam keeps two extra numbers per weight (a running mean and a running squared mean of gradients; Kingma and Ba describe the method as "based on adaptive estimates of lower-order moments", [arXiv 1412.6980](https://arxiv.org/abs/1412.6980)), so training costs several times the model's size (see the memory table in Tutorial 2).
+
+**Tiny example (this guide's arithmetic).** One billion weights in bf16 take 2 GB. With a bf16 gradient (2 GB) and two float32 Adam numbers (8 GB), that is 12 GB per billion weights, so 48 GB for four billion, matching the table in Tutorial 2.
+
+**Where used.** "What it costs" in Tutorial 2.
+
+**Pointer.** [01 Options and trade-offs, memory section](../01-options-and-trade-offs.md#memory-as-a-first-estimate).
+
+### Prerequisite 3 - Learning rate, epoch and overfitting
+
+**Plain explanation.** The learning rate scales each weight update; the epoch count is how many passes over the data. Too much of either and the model memorises the training set and loses general skill.
+
+**Tiny example (this guide's arithmetic).** With learning rate 2e-5 and a weight gradient of 0.5, a plain gradient step would move that weight by 1e-5. (Adam rescales the step, so this is the order of magnitude, not the exact move.) Three epochs over 3,000 examples at batch 16 is about 562 optimiser steps (3 x 3,000 / 16 = 562.5).
+
+**Where used.** The settings in Tutorial 2 and the sweeps in Tutorial 3.
+
+**Pointer.** [LoRA guide](../../../llm-learning-repository/tutorials/02-building/09-lora.md), which discusses learning-rate sensitivity.
+
+## Where this sits
+
+**Before (reading order, no claim):** [01 Options and trade-offs](../01-options-and-trade-offs.md) for why to change weights at all; the lab's [InstructGPT guide](../../../llm-learning-repository/tutorials/02-building/08-instructgpt.md) for the large-scale pipeline.
+
+**After (reading order, no claim):** [02 LoRA](./02-lora.md) (train a small adapter instead of every weight), then [03 QLoRA](./03-qlora.md) (the adapter on a 4-bit base) and [04 DoRA](./04-dora.md). The build process is in [04 Build and deploy playbook](../04-build-and-deploy-playbook.md).
+
+**Nearest techniques.** *LoRA* freezes the model and trains two thin matrices per layer ([02 LoRA](./02-lora.md)): less memory and less forgetting, and a lower ceiling on code and maths in the [LoRA Learns Less](https://arxiv.org/abs/2405.09673) results (Tutorial 3). *Preference tuning* (DPO and relatives, [06](./06-preference-tuning.md)) needs chosen-versus-rejected pairs; **Judgment:** it normally runs after an SFT step.
+
+**Read next:** [02 LoRA](./02-lora.md).
+
+## Checkpoint
+
+<details>
+<summary>1. (Compute) A masked example has 8 graded tokens with total NLL 3.2, and 30 prompt tokens at 1.5 each. What are the masked and unmasked losses?</summary>
+
+(This guide's arithmetic.) Masked: 3.2 / 8 = 0.40. Unmasked: (3.2 + 45) / 38 = 1.268. The prompt tokens raise the average by a factor of about 3.2 and take most of the gradient.
+</details>
+
+<details>
+<summary>2. (Compute) How much memory do weights, gradients and Adam state need for a 3B model in bf16 weights, bf16 gradients and float32 Adam state?</summary>
+
+3e9 x (2 + 2 + 8) bytes = 36 GB, before activations (this guide's arithmetic).
+</details>
+
+<details>
+<summary>3. (Explain) Why can a team that sees validation loss rise after epoch 1 still correctly keep training?</summary>
+
+Validation loss scores prediction of one reference answer. [InstructGPT](https://arxiv.org/html/2203.02155) (Section 3.5) found preference and reward-model scores kept improving for 16 epochs even as validation loss rose. Check a task metric on held-out data, and stop on that.
+</details>
+
+<details>
+<summary>4. (Critique) A vendor says "full fine-tuning always beats LoRA". What does the evidence in this guide support?</summary>
+
+Only a narrow version, per [LoRA Learns Less](https://arxiv.org/html/2405.09673): on Llama-2-7B, code and maths, LoRA at typical ranks learned less than full fine-tuning, with the gap largest for continued pretraining and for code. Rank 256 on all modules nearly closed it for instruction tuning (code: 0.498 against 0.470 at epoch 4, Table S5), and LoRA forgot less. It is one model family and two domains.
+</details>
+
+<details>
+<summary>5. (Explain) What are the two things that must match between training and serving so a tuned model terminates its answers?</summary>
+
+The chat template layout, and the end-of-turn token being both trained on and used as a stop token. [TRL's documentation](https://huggingface.co/docs/trl/sft_trainer#instruction-tuning-example) says it adds the template's end-of-turn token to the generation config's stop tokens.
+</details>
+
+<details>
+<summary>6. (Critique) Your held-out new-format accuracy peaked at epoch 2 and fell at epoch 4 while in-distribution accuracy kept rising. What do you ship and what do you change?</summary>
+
+**Judgment:** ship the epoch-2 checkpoint, chosen by a rule fixed beforehand on the new-format split. Change the data (more variety of formats and generators) and consider a lower learning rate or an adapter, because the model is memorising its training sources.
+</details>
